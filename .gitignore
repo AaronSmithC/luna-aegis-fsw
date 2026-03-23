@@ -1,0 +1,22 @@
+# Build artifacts
+build/
+*.o
+*.so
+
+# cFS tree (cloned by install.sh)
+cFS/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

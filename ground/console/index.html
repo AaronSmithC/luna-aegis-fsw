@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA-AEGIS · SHORT HOPPER · MISSION CONTROL</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Chakra+Petch:wght@300;400;500;600;700&display=swap');
+:root{--bg:#060f1c;--bg2:#0a1628;--bg3:#0c1e30;--cy:#00cfff;--cy2:#007a99;--cy3:#003344;--cyg:#00cfff40;--am:#ffb300;--gn:#00e676;--gn2:#005f30;--rd:#ff5252;--rd2:#661515;--mg:#e040fb;--wh:#ccdde8;--dm:#5a7080;--gr:#0d2a4080;--fm:'IBM Plex Mono',monospace;--fd:'Chakra Petch',sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--wh);font-family:var(--fm);min-height:100vh}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(var(--gr) 1px,transparent 1px),linear-gradient(90deg,var(--gr) 1px,transparent 1px);background-size:20px 20px;pointer-events:none;z-index:0}
+
+/* TOP BAR */
+.top{position:fixed;top:0;left:0;right:0;height:56px;background:var(--bg);border-bottom:2px solid var(--cy);display:flex;align-items:center;justify-content:space-between;padding:0 24px;z-index:100}
+.top h1{font-family:var(--fd);font-weight:700;font-size:18px;color:var(--cy);letter-spacing:3px}
+.top h1 span{color:var(--dm);font-weight:400;font-size:13px;margin-left:16px}
+.top-r{display:flex;align-items:center;gap:24px}
+.ind{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dm);letter-spacing:1px}
+.dot{width:10px;height:10px;border-radius:50%}.dot.g{background:var(--gn);box-shadow:0 0 8px var(--gn)}.dot.r{background:var(--rd);box-shadow:0 0 8px var(--rd)}.dot.a{background:var(--am);box-shadow:0 0 8px var(--am)}.dot.o{background:#333}
+.met{font-family:var(--fd);font-size:22px;font-weight:700;color:var(--am);letter-spacing:3px}
+
+/* MAIN */
+.main{position:relative;z-index:1;margin-top:60px;padding:16px;display:grid;grid-template-columns:340px 1fr;gap:16px;min-height:calc(100vh - 90px)}
+@media(max-width:1000px){.main{grid-template-columns:1fr}}
+
+/* LEFT: MISSION CONTROL */
+.left{display:flex;flex-direction:column;gap:12px}
+
+/* PHASE DISPLAY */
+.phase-box{background:var(--bg2);border:2px solid var(--cy2);border-radius:8px;padding:20px;text-align:center}
+.phase-label{font-size:11px;color:var(--dm);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
+.phase-name{font-family:var(--fd);font-weight:700;font-size:36px;letter-spacing:2px;transition:color .5s}
+.phase-timer{font-size:13px;color:var(--dm);margin-top:4px}
+
+/* DESTINATION SELECTOR */
+.dest-box{background:var(--bg2);border:1px solid var(--cy2);border-radius:8px;padding:16px}
+.dest-box h3{font-family:var(--fd);font-size:12px;color:var(--cy);letter-spacing:2px;margin-bottom:10px}
+select{width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--cy2);border-radius:6px;color:var(--wh);font-family:var(--fm);font-size:14px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2300cfff' fill='none' stroke-width='2'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+select:focus{outline:none;border-color:var(--cy);box-shadow:0 0 10px var(--cyg)}
+select option{background:var(--bg);color:var(--wh);padding:8px}
+.dest-info{margin-top:8px;font-size:12px;color:var(--dm);line-height:1.5}
+.dest-info span{color:var(--cy)}
+
+/* LAUNCH BUTTON */
+.launch-btn{width:100%;padding:18px;border:2px solid var(--gn);border-radius:8px;background:var(--gn2);color:var(--gn);font-family:var(--fd);font-size:20px;font-weight:700;letter-spacing:4px;cursor:pointer;transition:all .2s;text-transform:uppercase}
+.launch-btn:hover{background:#00833d;box-shadow:0 0 20px #00e67640;transform:scale(1.01)}
+.launch-btn:active{transform:scale(.98)}
+.launch-btn:disabled{opacity:.3;cursor:not-allowed;transform:none;box-shadow:none}
+.launch-btn.abort{border-color:var(--rd);background:var(--rd2);color:var(--rd)}
+.launch-btn.abort:hover{box-shadow:0 0 20px #ff525240}
+
+/* SECONDARY BUTTONS */
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+.sbtn{flex:1;min-width:70px;padding:10px 8px;border:1px solid var(--cy2);border-radius:6px;background:var(--bg);color:var(--cy);font-family:var(--fm);font-size:11px;font-weight:600;letter-spacing:1px;cursor:pointer;transition:all .15s;text-align:center}
+.sbtn:hover{background:var(--cy3);border-color:var(--cy);box-shadow:0 0 8px var(--cyg)}
+.sbtn.w{border-color:var(--am);color:var(--am)}.sbtn.w:hover{background:#332200}
+.sbtn.d{border-color:var(--rd);color:var(--rd)}.sbtn.d:hover{background:var(--rd2)}
+
+/* RIGHT: TELEMETRY */
+.right{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start}
+@media(max-width:1000px){.right{grid-template-columns:1fr}}
+
+/* PANEL */
+.p{background:var(--bg2);border:1px solid var(--cy2);border-radius:6px;overflow:hidden}
+.ph{background:var(--bg3);padding:6px 12px;border-bottom:1px solid var(--cy3);display:flex;align-items:center;justify-content:space-between}
+.pt{font-family:var(--fd);font-weight:600;font-size:11px;color:var(--cy);letter-spacing:2px}
+.pb{font-size:9px;padding:2px 7px;border-radius:3px;font-weight:700;letter-spacing:1px}
+.bg{background:var(--gn2);color:var(--gn)}.ba{background:#332200;color:var(--am)}.br{background:var(--rd2);color:var(--rd)}.bc{background:var(--cy3);color:var(--cy)}.bo{background:#1a1a1a;color:#555}
+.pd{padding:10px 12px}
+.dr{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;border-bottom:1px solid #0d2a4025}.dr:last-child{border-bottom:none}
+.dl{color:var(--dm);font-size:11px;letter-spacing:.5px}
+.dv{font-family:var(--fd);font-weight:500;font-size:14px;letter-spacing:.5px}
+.du{color:var(--dm);font-size:10px;margin-left:3px;font-family:var(--fm)}
+.vc{color:var(--cy)}.va{color:var(--am)}.vg{color:var(--gn)}.vr{color:var(--rd)}.vm{color:var(--mg)}.vw{color:var(--wh)}.vd{color:var(--dm)}
+.bar{height:6px;background:var(--bg);border-radius:3px;margin:4px 0;overflow:hidden;border:1px solid var(--cy3)}
+.bf{height:100%;border-radius:3px;transition:width 1s ease}
+.fc{background:var(--cy)}.fg{background:var(--gn)}.fa{background:var(--am)}.fr{background:var(--rd)}
+
+/* EVENT LOG */
+.elog{max-height:160px;overflow-y:auto;font-size:11px}.elog::-webkit-scrollbar{width:3px}.elog::-webkit-scrollbar-thumb{background:var(--cy2)}
+.ee{padding:3px 0;border-bottom:1px solid #0d2a4020;display:flex;gap:8px;align-items:baseline}
+.et{color:var(--dm);font-size:10px;min-width:60px}
+.es{font-weight:600;min-width:50px;font-size:10px}
+.em{font-size:11px}
+.ei .es{color:var(--cy)}.ec .es{color:var(--gn)}.er .es{color:var(--rd)}.ew .es{color:var(--am)}
+
+/* FULL WIDTH */
+.full{grid-column:1/-1}
+.stale .dv{opacity:.3}
+.bb{position:fixed;bottom:0;left:0;right:0;height:24px;background:var(--bg);border-top:1px solid var(--cy2);display:flex;align-items:center;justify-content:space-between;padding:0 24px;z-index:100;font-size:10px;color:var(--dm)}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>LUNA-AEGIS · SHORT HOPPER<span id="cL">CONNECTING</span></h1>
+  <div class="top-r">
+    <div class="ind"><div class="dot o" id="wD"></div><span id="wL">WS</span></div>
+    <div class="ind"><div class="dot o" id="tD"></div><span id="tL">TLM</span></div>
+    <div class="met" id="mD">T+--:--:--</div>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- LEFT: MISSION CONTROL -->
+  <div class="left">
+    <div class="phase-box">
+      <div class="phase-label">Flight Phase</div>
+      <div class="phase-name" id="pN">---</div>
+      <div class="phase-timer" id="pTm"></div>
+    </div>
+
+    <div class="dest-box">
+      <h3>▸ DESTINATION</h3>
+      <select id="destSel">
+        <option value="shackleton" data-range="0" data-lat="-89.9" data-lon="0.0">Shackleton Crater Rim</option>
+        <option value="malapert" data-range="120" data-lat="-86.0" data-lon="0.0">Malapert Massif (120 km)</option>
+        <option value="ridge-a" data-range="85" data-lat="-88.5" data-lon="22.0">Connecting Ridge Alpha (85 km)</option>
+        <option value="degerlache" data-range="150" data-lat="-88.5" data-lon="-70.0">de Gerlache Crater (150 km)</option>
+        <option value="leibnitz" data-range="310" data-lat="-85.5" data-lon="36.0">Leibnitz Beta Plateau (310 km)</option>
+        <option value="sverdrup" data-range="200" data-lat="-88.3" data-lon="-145.0">Sverdrup Rim Station (200 km)</option>
+        <option value="amundsen" data-range="280" data-lat="-84.5" data-lon="-85.0">Amundsen North (280 km)</option>
+        <option value="nobile" data-range="170" data-lat="-85.3" data-lon="53.0">Nobile Rim Station (170 km)</option>
+        <option value="cabeus" data-range="100" data-lat="-84.9" data-lon="-35.0">Cabeus Site (100 km)</option>
+        <option value="aegis-station" data-range="0" data-lat="0" data-lon="0">Aegis Station (LLO rendezvous)</option>
+      </select>
+      <div class="dest-info" id="dI">Range: <span>surface hop</span></div>
+    </div>
+
+    <button class="launch-btn" id="goBtn" onclick="doLaunch()">▶ LAUNCH</button>
+    <button class="launch-btn abort" id="abBtn" onclick="C('ABORT')" style="display:none">⚠ EMERGENCY ABORT</button>
+
+    <div class="btn-row">
+      <button class="sbtn w" onclick="C('MANUAL')">MANUAL</button>
+      <button class="sbtn" onclick="C('AUTO')">AUTO</button>
+      <button class="sbtn" onclick="C('DOCK_MATE')">DOCK</button>
+      <button class="sbtn" onclick="C('DOCK_DEMATE')">UNDOCK</button>
+    </div>
+
+    <!-- PROPULSION PANEL (left side) -->
+    <div class="p">
+      <div class="ph"><span class="pt">▸ PROPULSION</span><span class="pb bo" id="eB">---</span></div>
+      <div class="pd">
+        <div class="dr"><span class="dl">Thrust</span><span class="dv vg" id="tE">---</span></div>
+        <div class="dr"><span class="dl">Chamber Pc</span><span class="dv vw" id="cP">---</span></div>
+        <div class="dr"><span class="dl">LOX</span><span class="dv vc" id="oM">---</span></div>
+        <div class="bar"><div class="bf fc" id="oB" style="width:0"></div></div>
+        <div class="dr"><span class="dl">LH₂</span><span class="dv vc" id="fM">---</span></div>
+        <div class="bar"><div class="bf fc" id="fB" style="width:0"></div></div>
+        <div class="dr"><span class="dl">Δv Remaining</span><span class="dv va" id="dR">---</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: TELEMETRY PANELS -->
+  <div class="right">
+
+    <div class="p" id="pNV"><div class="ph"><span class="pt">▸ NAVIGATION</span><span class="pb bo" id="nB">---</span></div><div class="pd">
+      <div class="dr"><span class="dl">Position</span><span class="dv vc" id="pos">---</span></div>
+      <div class="dr"><span class="dl">Velocity</span><span class="dv vg" id="vel">---</span></div>
+      <div class="dr"><span class="dl">Nav Mode</span><span class="dv va" id="nM">---</span></div>
+      <div class="dr"><span class="dl">Health</span><span class="dv vg" id="nH">---</span></div>
+    </div></div>
+
+    <div class="p" id="pEP"><div class="ph"><span class="pt">▸ POWER</span><span class="pb bo" id="epB">---</span></div><div class="pd">
+      <div class="dr"><span class="dl">Bus</span><span class="dv vc" id="bV">---</span></div>
+      <div class="dr"><span class="dl">Battery</span><span class="dv vg" id="sC">---</span></div>
+      <div class="bar"><div class="bf fg" id="sB" style="width:0"></div></div>
+      <div class="dr"><span class="dl">Temp</span><span class="dv vw" id="bT">---</span></div>
+      <div class="dr"><span class="dl">Load Shed</span><span class="dv vg" id="lS">---</span></div>
+    </div></div>
+
+    <div class="p" id="pLS"><div class="ph"><span class="pt">▸ LIFE SUPPORT</span><span class="pb bo" id="lB">---</span></div><div class="pd">
+      <div class="dr"><span class="dl">Cabin</span><span class="dv vc" id="kP">---</span></div>
+      <div class="dr"><span class="dl">O₂ / CO₂</span><span class="dv vg" id="o2c">---</span></div>
+      <div class="dr"><span class="dl">Temp / Humid</span><span class="dv vw" id="tH">---</span></div>
+      <div class="dr"><span class="dl">Scrubber</span><span class="dv vg" id="sR">---</span></div>
+      <div class="bar"><div class="bf fg" id="srB" style="width:0"></div></div>
+    </div></div>
+
+    <div class="p" id="pCM"><div class="ph"><span class="pt">▸ COMMS</span><span class="pb bo" id="cmB">---</span></div><div class="pd">
+      <div class="dr"><span class="dl">Link</span><span class="dv vc" id="lK">---</span></div>
+      <div class="dr"><span class="dl">SNR Up/Down</span><span class="dv vg" id="snr">---</span></div>
+      <div class="dr"><span class="dl">HGA Pointing</span><span class="dv vw" id="hG">---</span></div>
+    </div></div>
+
+    <div class="p" id="pHS"><div class="ph"><span class="pt">▸ VEHICLE HEALTH</span><span class="pb bo" id="hB">---</span></div><div class="pd">
+      <div class="dr"><span class="dl">CPU</span><span class="dv vc" id="cpU">---</span></div>
+      <div class="bar"><div class="bf fc" id="cpB" style="width:0"></div></div>
+      <div class="dr"><span class="dl">Watchdog</span><span class="dv vg" id="wM">---</span></div>
+      <div class="dr"><span class="dl">Alerts</span><span class="dv vw" id="cE">---</span></div>
+    </div></div>
+
+    <div class="p" id="pLG"><div class="ph"><span class="pt">▸ GEAR / DOCK</span><span class="pb bo" id="lgB">---</span></div><div class="pd">
+      <div class="dr"><span class="dl">Gear</span><span class="dv vg" id="gS">---</span></div>
+      <div class="dr"><span class="dl">Legs</span><span class="dv vw" id="lL">---</span></div>
+      <div class="dr"><span class="dl">Dock</span><span class="dv vw" id="dK">---</span></div>
+      <div class="dr"><span class="dl">Seal ΔP</span><span class="dv vw" id="sP">---</span></div>
+    </div></div>
+
+    <!-- EVENT LOG -->
+    <div class="p full"><div class="ph"><span class="pt">▸ EVENT LOG</span><span class="pb bc" id="eC">0</span></div><div class="pd"><div class="elog" id="eL"></div></div></div>
+  </div>
+
+</div>
+
+<footer class="bb"><span>AEGIS STATION INFRASTRUCTURE LLC — ITAR/EAR-FREE</span><span id="pC">TLM: 0 | CMD: 0</span></footer>
+
+<script>
+const WS_URL=`ws://${location.hostname||'localhost'}:8765`;
+let ws,conn=false,tc=0,cc=0,lt=0,curPhase=0;
+const ev=[];const st={};
+const $=id=>document.getElementById(id);
+const F=(v,d)=>v!=null?v.toFixed(d??1):'---';
+const V=(id,v,u)=>{const e=$(id);if(e)e.innerHTML=u?`${v}<span class="du">${u}</span>`:v};
+function MET(s){if(s==null)return'T+--:--:--';const h=Math.floor(s/3600),m=Math.floor(s%3600/60),c=Math.floor(s%60);return`T+${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(c).padStart(2,'0')}`}
+function fresh(id){st[id]=Date.now();const e=$(id);if(e)e.classList.remove('stale')}
+setInterval(()=>{const n=Date.now();for(const[i,t]of Object.entries(st))if(n-t>5000){const e=$(i);if(e)e.classList.add('stale')}},1000);
+
+function L(s,m,c){c=c||'ei';const t=new Date().toLocaleTimeString('en-US',{hour12:false});ev.unshift({t,s,m,c});if(ev.length>200)ev.pop();$('eL').innerHTML=ev.slice(0,40).map(e=>`<div class="ee ${e.c}"><span class="et">${e.t}</span><span class="es">${e.s}</span><span class="em">${e.m}</span></div>`).join('');$('eC').textContent=ev.length}
+
+function C(cmd,p){if(!ws||ws.readyState!==1){L('CMD',`Cannot send ${cmd} — not connected`,'er');return}ws.send(JSON.stringify({cmd,params:p||{}}));cc++;L('CMD',`→ ${cmd}`,'ec');$('pC').textContent=`TLM: ${tc} | CMD: ${cc}`}
+
+// Destination selector
+$('destSel').addEventListener('change', function(){
+  const opt = this.options[this.selectedIndex];
+  const range = opt.dataset.range;
+  $('dI').innerHTML = range == '0'
+    ? 'Range: <span>surface hop / LLO rendezvous</span>'
+    : `Range: <span>${range} km</span> · Est. Δv: <span>~${Math.round(range*0.6+200)} m/s</span>`;
+});
+$('destSel').dispatchEvent(new Event('change'));
+
+// Launch / Abort toggle
+function doLaunch(){
+  const dest = $('destSel').options[$('destSel').selectedIndex].text;
+  L('MISSION', `Launch to ${dest}`, 'ec');
+  C('START_MISSION');
+}
+
+function updateButtons(phase){
+  const flying = phase >= 1 && phase <= 5;
+  $('goBtn').style.display = flying ? 'none' : 'block';
+  $('abBtn').style.display = flying ? 'block' : 'none';
+  $('goBtn').disabled = (phase > 0 && phase < 6 && phase != 8);
+}
+
+const PC={0:'var(--dm)',1:'var(--gn)',2:'var(--cy)',3:'var(--am)',4:'var(--mg)',5:'var(--rd)',6:'var(--gn)',7:'var(--rd)',8:'var(--dm)'};
+const SN=['NONE','LOW-POWER','CRITICAL'];
+const MN=['AUTO','MANUAL','ABORT-SEQ'];
+const AN=['','PROPULSION','NAV LOST','COMMANDED'];
+
+function H(m){tc++;lt=Date.now();$('tD').className='dot g';$('tL').textContent=`TLM ${tc}`;$('pC').textContent=`TLM: ${tc} | CMD: ${cc}`;
+switch(m.type){
+case'mm_phase':
+  $('pN').textContent=m.phaseName||'---';
+  $('pN').style.color=PC[m.phase]||'var(--wh)';
+  $('mD').textContent=MET(m.met);
+  let ptxt=MN[m.missionMode]||'';
+  if(m.phaseTimer) ptxt+=` · ${m.phaseTimer}s`;
+  if(m.abortReason) ptxt+=` · ${AN[m.abortReason]}`;
+  $('pTm').textContent=ptxt;
+  V('dR',F(m.dvRemaining,0),'m/s');
+  curPhase=m.phase;
+  updateButtons(m.phase);
+  break;
+case'nav_state':fresh('pNV');
+  V('pos',`${F(m.posX,0)} / ${F(m.posY,0)} / ${F(m.posZ,0)}`,'m');
+  V('vel',`${F(m.velX,1)} / ${F(m.velY,1)} / ${F(m.velZ,1)}`,'m/s');
+  V('nM',m.navModeName||'---');
+  const nh=m.navHealth;V('nH',nh===0?'OK':nh===1?'DEGRADED':'LOST');
+  $('nH').className='dv '+(nh===0?'vg':nh===1?'va':'vr');
+  $('nB').textContent=nh===0?'OK':''+nh;$('nB').className='pb '+(nh===0?'bg':'br');
+  break;
+case'prop_status':
+  V('tE',F(m.thrustEst/1000,1),'kN');
+  V('cP',F(m.chamberPress,0),'kPa');
+  V('oM',F(m.oxMass,0),'kg');V('fM',F(m.fuelMass,0),'kg');
+  $('oB').style.width=Math.min(100,m.oxMass/2062.5*100)+'%';
+  $('fB').style.width=Math.min(100,m.fuelMass/687.5*100)+'%';
+  $('eB').textContent=m.engineStateName||'---';
+  $('eB').className='pb '+(m.engineState===3?'bg':m.engineState>=4?'br':m.engineState>0?'ba':'bo');
+  break;
+case'eps_status':fresh('pEP');
+  V('bV',F(m.busVoltage,1),'V');V('sC',F(m.battSOC,0),'%');
+  $('sB').style.width=Math.min(100,m.battSOC)+'%';
+  $('sB').className='bf '+(m.battSOC<15?'fr':m.battSOC<30?'fa':'fg');
+  V('bT',F(m.battTemp,0),'°C');
+  V('lS',SN[m.loadShedLevel]||'---');
+  $('epB').textContent=m.loadShedLevel===0?'NOM':'SHED';$('epB').className='pb '+(m.loadShedLevel===0?'bg':'br');
+  break;
+case'lss_status':fresh('pLS');
+  V('kP',F(m.cabinPress,1),'kPa');
+  V('o2c',`${F(m.ppO2,1)} / ${F(m.ppCO2,2)}`,'kPa');
+  $('o2c').className='dv '+(m.ppCO2>.4?'vr':'vg');
+  V('tH',`${F(m.cabinTemp,0)}°C / ${F(m.humidity,0)}%`);
+  V('sR',F(m.scrubberPct,0),'%');
+  $('srB').style.width=Math.min(100,m.scrubberPct||0)+'%';
+  $('lB').textContent=m.lssMode===0?'NOM':'WARN';$('lB').className='pb '+(m.lssMode===0?'bg':'br');
+  break;
+case'comm_link':fresh('pCM');
+  V('lK',m.linkStateName||'---');
+  V('snr',`${F(m.uplinkSNR,0)} / ${F(m.downlinkSNR,0)}`,'dB');
+  V('hG',`${F(m.hgaAz,0)}° / ${F(m.hgaEl,0)}°`);
+  $('cmB').textContent=m.linkStateName||'---';$('cmB').className='pb '+(m.linkState>=2?'bg':m.linkState===1?'ba':'br');
+  break;
+case'hs_alert':fresh('pHS');
+  V('cpU',F(m.cpuLoad,0),'%');
+  $('cpB').style.width=Math.min(100,m.cpuLoad)+'%';
+  $('cpB').className='bf '+(m.cpuLoad>80?'fr':m.cpuLoad>60?'fa':'fc');
+  V('wM',m.watchdogMask||'---');V('cE',m.critEvents||'0');
+  $('hB').textContent=(m.critEvents||0)===0?'OK':m.critEvents+' ALERT';$('hB').className='pb '+((m.critEvents||0)===0?'bg':'br');
+  break;
+case'lg_status':fresh('pLG');
+  V('gS',m.gearStateName||'---');$('gS').className='dv '+(m.gearState===2?'vg':'va');
+  V('lL',(m.legLoads||[]).map(l=>Math.round(l)).join(' / '),'N');
+  $('lgB').textContent=m.gearStateName||'---';$('lgB').className='pb '+(m.gearState===2?'bg':'ba');
+  break;
+case'dock_status':fresh('pLG');
+  V('dK',m.collarStateName||'---');V('sP',F(m.deltaP,2),'kPa');break;
+case'bridge_status':L('BRIDGE',`Connected to cFS at ${m.cfsHost}:${m.ciPort}`,'ei');break;
+case'cmdAck':L('ACK',`${m.cmd} (${m.bytes}B)`,'ec');break;
+case'error':L('ERR',m.message,'er');break;
+}}
+
+function connect(){ws=new WebSocket(WS_URL);
+ws.onopen=()=>{conn=true;$('wD').className='dot g';$('wL').textContent='LIVE';$('cL').textContent='CONNECTED';$('cL').style.color='var(--gn)';L('WS','Bridge connected','ei')};
+ws.onclose=()=>{conn=false;$('wD').className='dot r';$('wL').textContent='DOWN';$('cL').textContent='DISCONNECTED';$('cL').style.color='var(--rd)';$('tD').className='dot o';$('tL').textContent='---';L('WS','Reconnecting...','er');setTimeout(connect,3000)};
+ws.onerror=()=>L('WS','Error','er');
+ws.onmessage=e=>{try{H(JSON.parse(e.data))}catch(x){console.error(x)}}}
+setInterval(()=>{if(conn&&lt&&Date.now()-lt>5000){$('tD').className='dot a';$('tL').textContent='STALE'}},2000);
+L('SYS','Luna-Aegis Mission Control v2.0','ei');connect();
+</script>
+</body>
+</html>
