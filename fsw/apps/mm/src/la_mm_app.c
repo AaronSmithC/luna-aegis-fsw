@@ -41,6 +41,12 @@
 #define MM_ABORT_CC         3
 #define MM_MANUAL_CC        4
 #define MM_AUTO_CC          5
+#define MM_SET_DOCK_CC      6  /* Set orbital/docking mission profile  */
+#define MM_SET_SURFACE_CC   7  /* Set surface landing mission profile  */
+
+/* Mission types */
+#define MM_MISSION_SURFACE  0  /* Landing profile: HOVER → TERMINAL → LANDED */
+#define MM_MISSION_DOCK     1  /* Docking profile: HOVER → TERMINAL → LANDED (dock) */
 
 typedef struct {
     /* cFS infrastructure */
@@ -51,6 +57,7 @@ typedef struct {
     LA_FlightPhase_t CurrentPhase;
     LA_FlightPhase_t PreviousPhase;
     uint8_t          MissionMode;     /* 0=auto, 1=manual, 2=abort-seq */
+    uint8_t          MissionType;     /* 0=surface landing, 1=orbital docking */
     uint8_t          AbortReason;
     double           MET_s;           /* Mission elapsed time          */
     uint32_t         PhaseTimer_s;
@@ -257,21 +264,50 @@ static void MM_UpdateFSM(void)
         break;
 
     case LA_PHASE_HOVER:
-        /* Station-keeping at ~50m altitude: 5 seconds */
-        if (MM.PhaseTimer_s > 8) {
-            MM_TransitionTo(LA_PHASE_TERMINAL);
+        if (MM.MissionType == MM_MISSION_DOCK) {
+            /* Docking: hover = station-keeping near target, then approach */
+            if (MM.PhaseTimer_s > 10) {
+                CFE_EVS_SendEvent(30, CFE_EVS_EventType_INFORMATION,
+                                  "MM: Approach phase — initiating docking sequence");
+                MM_TransitionTo(LA_PHASE_TERMINAL);
+            }
+        } else {
+            /* Surface: hover at ~50 m, 8 seconds, then terminal descent */
+            if (MM.PhaseTimer_s > 8) {
+                MM_TransitionTo(LA_PHASE_TERMINAL);
+            }
         }
         break;
 
     case LA_PHASE_TERMINAL:
-        /* Terminal descent: 6 seconds */
-        if (MM.PhaseTimer_s > 6) {
-            MM_TransitionTo(LA_PHASE_LANDED);
+        if (MM.MissionType == MM_MISSION_DOCK) {
+            /* Docking approach: 10 seconds then transition to LANDED (docked) */
+            if (MM.PhaseTimer_s > 10) {
+                CFE_EVS_SendEvent(31, CFE_EVS_EventType_INFORMATION,
+                                  "MM: Docking — commanding DOCK MATE");
+                /* Send DOCK MATE command */
+                CFE_MSG_CommandHeader_t dock_cmd;
+                CFE_MSG_Init(&dock_cmd.Msg,
+                             CFE_SB_ValueToMsgId(LA_DOCK_CMD_MID),
+                             sizeof(dock_cmd));
+                CFE_MSG_SetFcnCode(&dock_cmd.Msg, 2); /* MATE */
+                CFE_SB_TransmitMsg(&dock_cmd.Msg, true);
+                MM_TransitionTo(LA_PHASE_LANDED);
+            }
+        } else {
+            /* Surface terminal descent: 6 seconds */
+            if (MM.PhaseTimer_s > 6) {
+                MM_TransitionTo(LA_PHASE_LANDED);
+            }
         }
         break;
 
     case LA_PHASE_LANDED:
-        /* Terminal state — awaiting safing or new mission */
+        /* Terminal state — docked or landed, awaiting safing or new mission */
+        if (MM.MissionType == MM_MISSION_DOCK && MM.PhaseTimer_s == 1) {
+            CFE_EVS_SendEvent(32, CFE_EVS_EventType_INFORMATION,
+                              "MM: DOCKED at Aegis Station — systems nominal");
+        }
         break;
 
     case LA_PHASE_ABORT:
@@ -335,12 +371,17 @@ static void MM_TransitionTo(LA_FlightPhase_t new_phase)
     switch (new_phase) {
 
     case LA_PHASE_POWERED_ASC:
-        /* Arm and start engine, retract gear */
+        /* Arm and start engine */
         MM_SendSubsystemCmd(LA_PROP_CMD_MID, PROP_ARM_CC);
         MM_SendSubsystemCmd(LA_PROP_CMD_MID, PROP_START_CC);
-        MM_SendSubsystemCmd(LA_LG_CMD_MID,   LG_RETRACT_CC);
-        CFE_EVS_SendEvent(50, CFE_EVS_EventType_INFORMATION,
-                          "MM: Commanding PROP arm+start, LG retract");
+        if (MM.MissionType == MM_MISSION_SURFACE) {
+            MM_SendSubsystemCmd(LA_LG_CMD_MID, LG_RETRACT_CC);
+            CFE_EVS_SendEvent(50, CFE_EVS_EventType_INFORMATION,
+                              "MM: Commanding PROP arm+start, LG retract");
+        } else {
+            CFE_EVS_SendEvent(50, CFE_EVS_EventType_INFORMATION,
+                              "MM: Commanding PROP arm+start (docking profile)");
+        }
         break;
 
     case LA_PHASE_COAST:
@@ -351,25 +392,41 @@ static void MM_TransitionTo(LA_FlightPhase_t new_phase)
         break;
 
     case LA_PHASE_POWERED_DES:
-        /* Restart engine for descent burn */
+        /* Restart engine for descent/approach burn */
         MM_SendSubsystemCmd(LA_PROP_CMD_MID, PROP_ARM_CC);
         MM_SendSubsystemCmd(LA_PROP_CMD_MID, PROP_START_CC);
-        CFE_EVS_SendEvent(52, CFE_EVS_EventType_INFORMATION,
-                          "MM: Commanding PROP arm+start for descent");
+        if (MM.MissionType == MM_MISSION_SURFACE) {
+            CFE_EVS_SendEvent(52, CFE_EVS_EventType_INFORMATION,
+                              "MM: Commanding PROP arm+start for descent");
+        } else {
+            CFE_EVS_SendEvent(52, CFE_EVS_EventType_INFORMATION,
+                              "MM: Commanding PROP arm+start for rendezvous burn");
+        }
         break;
 
     case LA_PHASE_HOVER:
-        /* Deploy landing gear for approach */
-        MM_SendSubsystemCmd(LA_LG_CMD_MID, LG_DEPLOY_CC);
-        CFE_EVS_SendEvent(53, CFE_EVS_EventType_INFORMATION,
-                          "MM: Commanding LG deploy for landing");
+        if (MM.MissionType == MM_MISSION_SURFACE) {
+            /* Surface: deploy landing gear */
+            MM_SendSubsystemCmd(LA_LG_CMD_MID, LG_DEPLOY_CC);
+            CFE_EVS_SendEvent(53, CFE_EVS_EventType_INFORMATION,
+                              "MM: Commanding LG deploy for landing");
+        } else {
+            /* Docking: station-keeping, no gear */
+            CFE_EVS_SendEvent(53, CFE_EVS_EventType_INFORMATION,
+                              "MM: Station-keeping for docking approach");
+        }
         break;
 
     case LA_PHASE_LANDED:
-        /* Shutdown engine, vehicle is on surface */
+        /* Shutdown engine */
         MM_SendSubsystemCmd(LA_PROP_CMD_MID, PROP_SHUTDOWN_CC);
-        CFE_EVS_SendEvent(54, CFE_EVS_EventType_INFORMATION,
-                          "MM: TOUCHDOWN — commanding PROP shutdown");
+        if (MM.MissionType == MM_MISSION_DOCK) {
+            CFE_EVS_SendEvent(54, CFE_EVS_EventType_INFORMATION,
+                              "MM: DOCKED — commanding PROP shutdown");
+        } else {
+            CFE_EVS_SendEvent(54, CFE_EVS_EventType_INFORMATION,
+                              "MM: TOUCHDOWN — commanding PROP shutdown");
+        }
         break;
 
     case LA_PHASE_ABORT:
@@ -440,6 +497,20 @@ static void MM_ProcessCommand(const CFE_MSG_Message_t *MsgPtr)
         MM.CmdCount++;
         CFE_EVS_SendEvent(23, CFE_EVS_EventType_INFORMATION,
                           "MM: Switched to AUTO mode");
+        break;
+
+    case MM_SET_DOCK_CC:
+        MM.MissionType = MM_MISSION_DOCK;
+        MM.CmdCount++;
+        CFE_EVS_SendEvent(25, CFE_EVS_EventType_INFORMATION,
+                          "MM: Mission profile set to ORBITAL DOCKING");
+        break;
+
+    case MM_SET_SURFACE_CC:
+        MM.MissionType = MM_MISSION_SURFACE;
+        MM.CmdCount++;
+        CFE_EVS_SendEvent(26, CFE_EVS_EventType_INFORMATION,
+                          "MM: Mission profile set to SURFACE LANDING");
         break;
 
     default:

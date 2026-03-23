@@ -596,6 +596,32 @@ build_cfs() {
   log "  Running cmake prep (SIMULATION=native)..."
   make SIMULATION=native prep 2>&1 | tail -20
 
+  # ── Post-prep patches ──
+  # CMake generates osconfig.h during prep — we patch it AFTER prep.
+  log "  Patching generated OSAL config for Luna-Aegis resource limits..."
+  for osc in build/osal_public_api/inc/osconfig.h \
+             build/native/default_cpu1/osal/inc/osconfig.h; do
+    if [[ -f "$osc" ]]; then
+      sed -i 's/#define OS_MAX_MODULES.*/#define OS_MAX_MODULES                  48/' "$osc"
+      sed -i 's/#define OS_MAX_TASKS.*/#define OS_MAX_TASKS                    64/' "$osc"
+      sed -i 's/#define OS_MAX_QUEUES.*/#define OS_MAX_QUEUES                   64/' "$osc"
+    fi
+  done
+
+  # Patch OSAL to use RTLD_GLOBAL for dlopen so HAL library symbols
+  # are visible to dynamically loaded apps (matches RTEMS behavior)
+  local dl_loader="osal/src/os/portable/os-impl-posix-dl-loader.c"
+  if [[ -f "$dl_loader" ]]; then
+    sed -i 's/dl_mode |= RTLD_LOCAL/dl_mode |= RTLD_GLOBAL/' "$dl_loader"
+    log "  Patched OSAL dlopen to use RTLD_GLOBAL"
+  fi
+
+  # Bump MAX_APPLICATIONS in cFE ES config
+  local es_cfg="cfe/modules/es/fsw/inc/cfe_es_interface_cfg.h"
+  if [[ -f "$es_cfg" ]]; then
+    sed -i 's/DEFAULT_CFE_MISSION_ES_MAX_APPLICATIONS 16/DEFAULT_CFE_MISSION_ES_MAX_APPLICATIONS 40/' "$es_cfg"
+  fi
+
   log "  Compiling..."
   if make -j"$(nproc)" 2>&1 | tail -30; then
     ok "Build successful"

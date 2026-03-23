@@ -107,7 +107,13 @@ static void DOCK_UpdateFSM(void)
         break;
 
     case DOCK_FSM_SOFT:
-        /* Await command for pressure equalization */
+        /* Auto-initiate pressure equalization after 5 seconds in soft-dock */
+        if (DOCK.FSMTimer_s > 5) {
+            DOCK.FSM = DOCK_FSM_PRESS_EQ;
+            DOCK.FSMTimer_s = 0;
+            CFE_EVS_SendEvent(15, CFE_EVS_EventType_INFORMATION,
+                              "DOCK: Initiating pressure equalization");
+        }
         break;
 
     case DOCK_FSM_PRESS_EQ:

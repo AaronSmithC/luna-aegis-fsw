@@ -164,6 +164,9 @@ static void PROP_UpdateSequence(void)
                 thrust = PROP.LastGdnCmd.ThrustCmd_N;
                 if (thrust < 0.0) thrust = 0.0;
             }
+            /* Engine is lit — enforce minimum idle thrust (10% throttle) */
+            if (throttle < 10.0) throttle = 10.0;
+            if (thrust < 3000.0) thrust = 3000.0;
             HAL_Engine_Command(HAL_ENGINE_RUNNING, throttle);
 
             /* Propellant consumption model */

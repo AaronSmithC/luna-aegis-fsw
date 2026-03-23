@@ -72,7 +72,7 @@ LA_DOCK_CMD_MID            = 0x1926
 TO_LAB_CMD_MID             = 0x1880
 
 # Command function codes
-MM_CC = {"NOOP": 0, "RESET": 1, "START_MISSION": 2, "ABORT": 3, "MANUAL": 4, "AUTO": 5}
+MM_CC = {"NOOP": 0, "RESET": 1, "START_MISSION": 2, "ABORT": 3, "MANUAL": 4, "AUTO": 5, "SET_DOCK": 6, "SET_SURFACE": 7}
 PROP_CC = {"NOOP": 0, "RESET": 1, "ARM": 2, "DISARM": 3, "START": 4, "SHUTDOWN": 5}
 LG_CC = {"NOOP": 0, "RESET": 1, "DEPLOY": 2, "RETRACT": 3}
 DOCK_CC = {"NOOP": 0, "RESET": 1, "MATE": 2, "DEMATE": 3, "HARD": 4}

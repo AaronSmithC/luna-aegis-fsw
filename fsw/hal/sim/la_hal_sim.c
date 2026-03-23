@@ -36,6 +36,7 @@ static struct {
 
     /* Docking collar */
     HAL_DockState_t dock_state;
+    uint32_t        dock_eq_count;  /* Pressure equalization sim counter */
 
     /* EPS */
     double batt_soc_pct;
@@ -285,12 +286,46 @@ HAL_Status_t HAL_Dock_Read(HAL_Dock_Tlm_t *tlm)
 {
     if (!sim.initialized) return HAL_ERR_NOT_INIT;
     tlm->state           = (uint8_t)sim.dock_state;
-    tlm->seal_press_kPa  = (sim.dock_state >= HAL_DOCK_SOFT_DOCK)
-                            ? 101.3 + sim_noise(0.5) : 0.0;
-    tlm->tunnel_press_kPa= (sim.dock_state == HAL_DOCK_HARD_DOCK)
-                            ? 101.3 + sim_noise(0.2) : 0.0;
-    tlm->delta_p_kPa     = fabs(tlm->seal_press_kPa - tlm->tunnel_press_kPa);
-    tlm->latch_engaged   = (sim.dock_state == HAL_DOCK_HARD_DOCK) ? 12 : 0;
+
+    switch (sim.dock_state) {
+    case HAL_DOCK_HARD_DOCK:
+        /* Fully mated — both sides pressurized */
+        tlm->seal_press_kPa   = 101.3 + sim_noise(0.2);
+        tlm->tunnel_press_kPa = 101.3 + sim_noise(0.2);
+        tlm->delta_p_kPa      = fabs(sim_noise(0.1));
+        tlm->latch_engaged    = 12;
+        break;
+    case HAL_DOCK_SOFT_DOCK:
+        /* Soft-dock: seal side pressurized, tunnel ramping up
+         * Simulates pressure equalization over time.
+         * Tunnel press approaches seal press via sim counter. */
+        sim.dock_eq_count++;
+        {
+            double eq_frac = fmin(1.0, (double)sim.dock_eq_count / 8.0);
+            tlm->seal_press_kPa   = 101.3 + sim_noise(0.3);
+            tlm->tunnel_press_kPa = 101.3 * eq_frac + sim_noise(0.3);
+            tlm->delta_p_kPa      = fabs(tlm->seal_press_kPa - tlm->tunnel_press_kPa);
+        }
+        tlm->latch_engaged = 0;
+        break;
+    case HAL_DOCK_EXTENDING:
+        /* Collar extending — no pressure */
+        tlm->seal_press_kPa   = 0.0;
+        tlm->tunnel_press_kPa = 0.0;
+        tlm->delta_p_kPa      = 0.0;
+        tlm->latch_engaged    = 0;
+        /* Auto-transition to soft-dock after extending */
+        sim.dock_eq_count = 0;
+        break;
+    default:
+        /* RETRACTED / other */
+        tlm->seal_press_kPa   = 0.0;
+        tlm->tunnel_press_kPa = 0.0;
+        tlm->delta_p_kPa      = 0.0;
+        tlm->latch_engaged    = 0;
+        sim.dock_eq_count      = 0;
+        break;
+    }
     return HAL_OK;
 }
 

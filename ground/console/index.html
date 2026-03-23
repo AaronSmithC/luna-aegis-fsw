@@ -226,17 +226,31 @@ function C(cmd,p){if(!ws||ws.readyState!==1){L('CMD',`Cannot send ${cmd} — not
 $('destSel').addEventListener('change', function(){
   const opt = this.options[this.selectedIndex];
   const range = opt.dataset.range;
-  $('dI').innerHTML = range == '0'
-    ? 'Range: <span>surface hop / LLO rendezvous</span>'
-    : `Range: <span>${range} km</span> · Est. Δv: <span>~${Math.round(range*0.6+200)} m/s</span>`;
+  const isDock = this.value === 'aegis-station';
+  if (isDock) {
+    $('dI').innerHTML = 'Profile: <span>ORBITAL DOCKING</span> · Aegis Station LLO rendezvous';
+    $('goBtn').textContent = '▶ DOCK';
+  } else {
+    $('dI').innerHTML = `Profile: <span>SURFACE LANDING</span> · Range: <span>${range} km</span> · Δv: <span>~${Math.round(range*0.6+200)} m/s</span>`;
+    $('goBtn').textContent = '▶ LAUNCH';
+  }
 });
 $('destSel').dispatchEvent(new Event('change'));
 
 // Launch / Abort toggle
 function doLaunch(){
-  const dest = $('destSel').options[$('destSel').selectedIndex].text;
-  L('MISSION', `Launch to ${dest}`, 'ec');
-  C('START_MISSION');
+  const sel = $('destSel');
+  const dest = sel.options[sel.selectedIndex].text;
+  const val = sel.value;
+  const isDock = val === 'aegis-station';
+  if (isDock) {
+    C('SET_DOCK');
+    L('MISSION', `Docking mission to ${dest}`, 'ec');
+  } else {
+    C('SET_SURFACE');
+    L('MISSION', `Surface landing to ${dest}`, 'ec');
+  }
+  setTimeout(() => C('START_MISSION'), 200);
 }
 
 function updateButtons(phase){

@@ -99,19 +99,8 @@ static void LG_Process(void)
     }
     LG.StatusPkt.TouchdownDetect = td_mask;
 
-    /* Auto-deploy on descent phase */
-    if (LG.PhaseValid && !LG.AutoDeployDone) {
-        if (LG.LastPhase.CurrentPhase == LA_PHASE_POWERED_DES ||
-            LG.LastPhase.CurrentPhase == LA_PHASE_HOVER)
-        {
-            if (hw.state == HAL_LG_STOWED) {
-                HAL_LG_Deploy();
-                LG.AutoDeployDone = true;
-                CFE_EVS_SendEvent(20, CFE_EVS_EventType_INFORMATION,
-                                  "LG: Auto-deploy commanded for descent");
-            }
-        }
-    }
+    /* Auto-deploy disabled — MM commands deploy based on mission type
+     * (surface missions get explicit deploy command, docking missions don't) */
 
     CFE_SB_TransmitMsg(&LG.StatusPkt.TlmHdr.Msg, true);
 }
