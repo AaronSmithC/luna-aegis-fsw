@@ -67,6 +67,8 @@ LA_MM_ABORT_CMD_MID        = 0x1921
 LA_PROP_CMD_MID            = 0x1922
 LA_LG_CMD_MID              = 0x1924
 LA_DOCK_CMD_MID            = 0x1926
+LA_NAV_CMD_MID             = 0x1914
+LA_LUNET_CMD_MID_CMD       = 0x1938
 
 # TO_LAB
 TO_LAB_CMD_MID             = 0x1880
@@ -76,10 +78,14 @@ MM_CC = {"NOOP": 0, "RESET": 1, "START_MISSION": 2, "ABORT": 3, "MANUAL": 4, "AU
 PROP_CC = {"NOOP": 0, "RESET": 1, "ARM": 2, "DISARM": 3, "START": 4, "SHUTDOWN": 5}
 LG_CC = {"NOOP": 0, "RESET": 1, "DEPLOY": 2, "RETRACT": 3}
 DOCK_CC = {"NOOP": 0, "RESET": 1, "MATE": 2, "DEMATE": 3, "HARD": 4}
+NAV_CC = {"NOOP": 0, "RESET": 1, "SET_DEST": 2}
+LUNET_CC = {"NOOP": 0, "RESET": 1, "REFUEL_START": 2, "AUTO_REFUEL": 3}
 
 # Enums
 PHASES = {0: "PREFLIGHT", 1: "POWERED_ASC", 2: "COAST", 3: "POWERED_DES",
-          4: "HOVER", 5: "TERMINAL", 6: "LANDED", 7: "ABORT", 8: "SAFED"}
+          4: "HOVER", 5: "TERMINAL", 6: "LANDED", 7: "ABORT", 8: "SAFED",
+          9: "RENDEZVOUS", 10: "DOCKING", 11: "DOCKED", 12: "UNDOCKING"}
+MISSION_TYPES = {0: "SURFACE", 1: "DOCKING"}
 NAV_MODES = {0: "PROPAGATE", 1: "IMU+ALT", 2: "FULL_FUSION"}
 ENGINE_STATES = {0: "OFF", 1: "CHILL", 2: "IGNITION", 3: "RUNNING", 4: "SHUTDOWN", 5: "FAULT"}
 GEAR_STATES = {0: "STOWED", 1: "DEPLOYING", 2: "DEPLOYED", 3: "RETRACTING", 4: "FAULT"}
@@ -129,18 +135,23 @@ def decode_tlm_header(data):
 # ──────────────────────────────────────────────────────────
 
 def parse_mm_phase(payload):
-    """LA_MM_PhasePkt_t: B B B B d d d I = 32 bytes"""
-    if len(payload) < 32:
+    """LA_MM_PhasePkt_t (Rev C): B B B B B x  d d d I = 36 bytes
+       CurrentPhase, PreviousPhase, AbortReason, MissionMode,
+       MissionType, Padding, MET_s, DvRemaining, PropRemaining,
+       PhaseTimer_s
+    """
+    if len(payload) < 36:
         return None
     try:
-        phase, prev, abort_r, mode = struct.unpack_from("BBBB", payload, 0)
-        met, dv_remain, prop_remain = struct.unpack_from("<ddd", payload, 4)
-        phase_timer = struct.unpack_from("<I", payload, 28)[0]
+        phase, prev, abort_r, mode, mtype, _pad = struct.unpack_from("BBBBBB", payload, 0)
+        met, dv_remain, prop_remain = struct.unpack_from("<ddd", payload, 8)
+        phase_timer = struct.unpack_from("<I", payload, 32)[0]
         return {
             "type": "mm_phase",
             "phase": phase, "phaseName": PHASES.get(phase, str(phase)),
             "previousPhase": prev, "abortReason": abort_r,
             "missionMode": mode,
+            "missionType": mtype, "missionTypeName": MISSION_TYPES.get(mtype, str(mtype)),
             "met": round(met, 1), "dvRemaining": round(dv_remain, 1),
             "propRemaining": round(prop_remain, 1),
             "phaseTimer": phase_timer,
@@ -150,8 +161,8 @@ def parse_mm_phase(payload):
 
 
 def parse_nav_state(payload):
-    """LA_NAV_StatePkt_t: 3d + 3d + 4d + 3d + d + d + d + B B xx = ~112 bytes"""
-    if len(payload) < 100:
+    """LA_NAV_StatePkt_t: 3d + 3d + 4d + 3d + 3d + d + BBBx = ~140 bytes (Rev D)"""
+    if len(payload) < 136:
         return None
     try:
         pos = struct.unpack_from("<3d", payload, 0)
@@ -159,7 +170,8 @@ def parse_nav_state(payload):
         att = struct.unpack_from("<4d", payload, 48)  # quaternion
         ang = struct.unpack_from("<3d", payload, 80)
         pos_u, vel_u, att_u = struct.unpack_from("<3d", payload, 104)
-        nav_mode, nav_health = struct.unpack_from("BB", payload, 128)
+        dist_to_dest, = struct.unpack_from("<d", payload, 128)
+        nav_mode, nav_health, dest_id = struct.unpack_from("BBB", payload, 136)
         return {
             "type": "nav_state",
             "posX": round(pos[0], 2), "posY": round(pos[1], 2), "posZ": round(pos[2], 2),
@@ -167,6 +179,8 @@ def parse_nav_state(payload):
             "attQ0": round(att[0], 4), "attQ1": round(att[1], 4),
             "attQ2": round(att[2], 4), "attQ3": round(att[3], 4),
             "posUncert": round(pos_u, 2), "velUncert": round(vel_u, 3),
+            "distToDest": round(dist_to_dest, 1),
+            "destId": dest_id if dest_id != 0xFF else None,
             "navMode": nav_mode, "navModeName": NAV_MODES.get(nav_mode, str(nav_mode)),
             "navHealth": nav_health,
         }
@@ -302,6 +316,29 @@ def parse_dock_status(payload):
         return None
 
 
+REFUEL_STATES = {0: "IDLE", 1: "HANDSHAKE", 2: "CART_MATE", 3: "PROP_XFER", 4: "RECHARGE", 5: "COMPLETE"}
+
+
+def parse_lunet_beacon(payload):
+    """LA_LUNET_BeaconPkt_t: 3d + d + d + BBBx"""
+    if len(payload) < 42:
+        return None
+    try:
+        bx, by, bz = struct.unpack_from("<3d", payload, 0)
+        rng, bearing = struct.unpack_from("<2d", payload, 24)
+        beacon_id, sig_q, refuel = struct.unpack_from("BBB", payload, 40)
+        return {
+            "type": "lunet_beacon",
+            "beaconId": beacon_id,
+            "range": round(rng, 1),
+            "signalQuality": sig_q,
+            "refuelState": refuel,
+            "refuelStateName": REFUEL_STATES.get(refuel, str(refuel)),
+        }
+    except struct.error:
+        return None
+
+
 # Parser registry
 TLM_PARSERS = {
     LA_MM_PHASE_TLM_MID:     parse_mm_phase,
@@ -313,6 +350,7 @@ TLM_PARSERS = {
     LA_COMM_LINK_TLM_MID:    parse_comm_link,
     LA_LG_STATUS_TLM_MID:    parse_lg_status,
     LA_DOCK_STATUS_TLM_MID:  parse_dock_status,
+    LA_LUNET_BEACON_TLM_MID: parse_lunet_beacon,
 }
 
 
@@ -330,11 +368,17 @@ class LABridge:
         self.running = True
         self.tlm_count = 0
         self.unknown_mids = set()
+        self.nav_decimator = 0   # Downsample NAV from 40 Hz to 2 Hz
+        self.prop_decimator = 0  # Downsample PROP from 10 Hz to 2 Hz
+
+        # Async queue decouples UDP recv from WebSocket broadcast
+        self.tlm_queue = asyncio.Queue(maxsize=512)
 
         # UDP sockets
         self.cmd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.tlm_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.tlm_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.tlm_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)  # 1 MB
         self.tlm_sock.bind(("0.0.0.0", self.tlm_port))
         self.tlm_sock.setblocking(False)
 
@@ -345,7 +389,7 @@ class LABridge:
         print()
 
         async with websockets.serve(self.ws_handler, "0.0.0.0", self.ws_port):
-            await self.tlm_relay()
+            await asyncio.gather(self.tlm_recv(), self.tlm_broadcast())
 
     async def ws_handler(self, websocket, path=None):
         self.clients.add(websocket)
@@ -406,6 +450,19 @@ class LABridge:
                 cc_key = cmd_type.replace("DOCK_", "")
                 pkt = build_ccsds_cmd(LA_DOCK_CMD_MID, DOCK_CC[cc_key])
 
+            # NAV commands
+            elif cmd_type == "NAV_SET_DEST":
+                dest_id = params.get("destId", 0)
+                payload = struct.pack("B", dest_id)
+                pkt = build_ccsds_cmd(LA_NAV_CMD_MID, NAV_CC["SET_DEST"], payload)
+                label = f"NAV_SET_DEST({dest_id})"
+
+            # LUNET commands
+            elif cmd_type == "LUNET_REFUEL_START":
+                pkt = build_ccsds_cmd(LA_LUNET_CMD_MID_CMD, LUNET_CC["REFUEL_START"])
+            elif cmd_type == "LUNET_AUTO_REFUEL":
+                pkt = build_ccsds_cmd(LA_LUNET_CMD_MID_CMD, LUNET_CC["AUTO_REFUEL"])
+
             else:
                 await websocket.send(json.dumps({
                     "type": "error",
@@ -429,7 +486,8 @@ class LABridge:
             await websocket.send(json.dumps(err))
             print(f"  ✗ Error: {e}")
 
-    async def tlm_relay(self):
+    async def tlm_recv(self):
+        """Read UDP as fast as possible, parse, and enqueue for broadcast."""
         loop = asyncio.get_event_loop()
         while self.running:
             try:
@@ -446,26 +504,57 @@ class LABridge:
                 if self.tlm_count <= 5:
                     print(f"  ◄ TLM #{self.tlm_count}: MID=0x{mid:04X} len={len(data)}")
 
+                # Downsample high-rate MIDs — console can't use more than ~2 Hz
+                if mid == LA_NAV_STATE_TLM_MID:
+                    self.nav_decimator += 1
+                    if self.nav_decimator % 20 != 0:  # 40 Hz → 2 Hz
+                        continue
+                elif mid == LA_PROP_STATUS_TLM_MID:
+                    self.prop_decimator += 1
+                    if self.prop_decimator % 5 != 0:  # 10 Hz → 2 Hz
+                        continue
+
                 parser = TLM_PARSERS.get(mid)
                 if parser:
                     parsed = parser(payload)
                     if parsed:
                         parsed["timestamp"] = time.time()
-                        await self.broadcast(json.dumps(parsed))
+                        msg = json.dumps(parsed)
+                    else:
+                        continue
                 else:
-                    # Forward unknown as raw
                     if mid not in self.unknown_mids:
                         self.unknown_mids.add(mid)
                         print(f"  · MID 0x{mid:04X} (no parser, len={len(data)})")
-                    raw = {"type": "raw", "mid": f"0x{mid:04X}",
-                           "length": len(data), "timestamp": time.time()}
-                    await self.broadcast(json.dumps(raw))
+                    msg = json.dumps({"type": "raw", "mid": f"0x{mid:04X}",
+                                      "length": len(data), "timestamp": time.time()})
+
+                # Non-blocking enqueue; drop oldest if full
+                if self.tlm_queue.full():
+                    try:
+                        self.tlm_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                self.tlm_queue.put_nowait(msg)
 
             except BlockingIOError:
                 await asyncio.sleep(0.01)
             except Exception as e:
                 if self.running:
-                    print(f"  ✗ TLM error: {e}")
+                    print(f"  ✗ TLM recv error: {e}")
+                    await asyncio.sleep(0.1)
+
+    async def tlm_broadcast(self):
+        """Drain the queue and push to WebSocket clients."""
+        while self.running:
+            try:
+                msg = await asyncio.wait_for(self.tlm_queue.get(), timeout=1.0)
+                await self.broadcast(msg)
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                if self.running:
+                    print(f"  ✗ TLM broadcast error: {e}")
                     await asyncio.sleep(0.1)
 
     async def broadcast(self, message):

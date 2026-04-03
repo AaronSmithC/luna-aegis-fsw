@@ -7,10 +7,16 @@
  *
  * Subscribes: IMU_DataPkt (40 Hz), ALT_DataPkt (10 Hz),
  *             TRN_PosFix (2 Hz), LUNET_BeaconPkt (1 Hz),
- *             SCH Wakeup (40 Hz)
+ *             MM_PhasePkt (1 Hz), SCH Wakeup (40 Hz)
  * Publishes:  NAV_StatePkt (40 Hz)
  *
  * State Vector: [pos(3), vel(3), att_err(3), gyro_bias(3)] = 12
+ *
+ * Trajectory Model (Rev D — ECL-2026-005):
+ *   Simplified 1D range model.  Distance-to-destination is
+ *   initialized from the destination table at mission start and
+ *   decremented by integrated speed during powered/coast phases.
+ *   The model assumes a straight-line great-circle path.
  *
  * Design Authority: Aegis Station Infrastructure LLC
  * ITAR/EAR-Free Baseline
@@ -19,6 +25,7 @@
 #include "../../cfe_hdr/cfe.h"
 #include "../../msg_defs/la_msgids.h"
 #include "../../msg_defs/la_msg_structs.h"
+#include "../../common/la_destinations.h"
 #include <string.h>
 #include <math.h>
 
@@ -28,6 +35,11 @@
 #define NAV_PIPE_NAME       "NAV_PIPE"
 #define NAV_STATE_DIM       12
 #define NAV_DT_NOMINAL      0.025  /* 40 Hz */
+
+/* Command function codes */
+#define NAV_NOOP_CC         0
+#define NAV_RESET_CC        1
+#define NAV_SET_DEST_CC     2
 
 /* Lunar constants */
 #define MOON_MU             4.9048695e12  /* GM (m^3/s^2) */
@@ -61,6 +73,15 @@ typedef struct {
     uint8_t  NavMode;   /* 0=propagate, 1=IMU+alt, 2=full fusion */
     uint8_t  NavHealth;  /* 0=OK, 1=degraded, 2=lost */
 
+    /* Trajectory / distance-to-destination model */
+    LA_MM_PhasePkt_t   LastPhase;       /* Cached MM phase packet           */
+    bool               Phase_fresh;
+    uint8_t            OriginId;        /* Where we are (dest ID, 0=Shack)  */
+    uint8_t            DestId;          /* Where we're going (0xFF = none)  */
+    double             DistToDest_m;    /* Remaining range to destination   */
+    double             InitDist_m;      /* Distance at mission start        */
+    bool               TrajActive;      /* True while in powered/coast      */
+
     /* Output packet */
     LA_NAV_StatePkt_t  StatePkt;
 
@@ -80,6 +101,8 @@ static void NAV_UpdateTRN(void);
 static void NAV_UpdateBeacon(void);
 static void NAV_SendStatePkt(void);
 static void NAV_AssessHealth(void);
+static void NAV_UpdateTrajectory(double dt);
+static void NAV_ProcessCommand(const CFE_MSG_Message_t *MsgPtr);
 
 /* ── Initialization ──────────────────────────────────────── */
 
@@ -111,6 +134,13 @@ static CFE_Status_t NAV_Init(void)
     NAV.NavMode   = 0; /* propagate only until sensors come in */
     NAV.NavHealth = 0;
 
+    /* Trajectory model: start at Shackleton, no destination */
+    NAV.OriginId     = 0;     /* Shackleton Base */
+    NAV.DestId       = 0xFF;
+    NAV.DistToDest_m = 0.0;
+    NAV.InitDist_m   = 0.0;
+    NAV.TrajActive   = false;
+
     CFE_EVS_Register(NULL, 0, 0);
     CFE_SB_CreatePipe(&NAV.CmdPipe, NAV_PIPE_DEPTH, NAV_PIPE_NAME);
 
@@ -119,6 +149,7 @@ static CFE_Status_t NAV_Init(void)
     CFE_SB_Subscribe(CFE_SB_ValueToMsgId(LA_ALT_DATA_TLM_MID),         NAV.CmdPipe);
     CFE_SB_Subscribe(CFE_SB_ValueToMsgId(LA_TRN_POSFIX_TLM_MID),       NAV.CmdPipe);
     CFE_SB_Subscribe(CFE_SB_ValueToMsgId(LA_LUNET_BEACON_TLM_MID),     NAV.CmdPipe);
+    CFE_SB_Subscribe(CFE_SB_ValueToMsgId(LA_MM_PHASE_TLM_MID),        NAV.CmdPipe); /* 1 Hz */
     CFE_SB_Subscribe(CFE_SB_ValueToMsgId(LA_SCH_WAKEUP_MID(0x03)),     NAV.CmdPipe); /* 40 Hz */
 
     CFE_MSG_Init(&NAV.StatePkt.TlmHdr.Msg, 
@@ -162,6 +193,7 @@ void NAV_AppMain(void)
             if (NAV.TRN_fresh)    { NAV_UpdateTRN();       NAV.TRN_fresh    = false; }
             if (NAV.Beacon_fresh) { NAV_UpdateBeacon();    NAV.Beacon_fresh = false; }
 
+            NAV_UpdateTrajectory(NAV_DT_NOMINAL);
             NAV_AssessHealth();
             NAV_SendStatePkt();
             NAV.CycleCount++;
@@ -188,6 +220,15 @@ void NAV_AppMain(void)
         case LA_LUNET_BEACON_TLM_MID:
             memcpy(&NAV.LastBeacon, SBBufPtr, sizeof(LA_LUNET_BeaconPkt_t));
             NAV.Beacon_fresh = true;
+            break;
+
+        case LA_MM_PHASE_TLM_MID:
+            memcpy(&NAV.LastPhase, SBBufPtr, sizeof(LA_MM_PhasePkt_t));
+            NAV.Phase_fresh = true;
+            break;
+
+        case LA_NAV_CMD_MID:
+            NAV_ProcessCommand(&SBBufPtr->Msg);
             break;
 
         default:
@@ -329,6 +370,89 @@ static void NAV_UpdateBeacon(void)
     }
 }
 
+/* ── Trajectory Model (1D range-to-destination) ─────────── */
+
+/**
+ * Simplified 1D range model:
+ *  - On transition to POWERED_ASC, compute initial great-circle
+ *    distance to the active destination from the home base
+ *    (Shackleton, ID 0) using the destination table.
+ *  - During powered and coast phases, decrement distance by
+ *    the integrated speed each cycle (speed * dt).
+ *  - Clamp at zero on arrival.  Reset on LANDED/DOCKED/SAFED.
+ *
+ * The destination ID is inferred from MM's MissionType:
+ *  - Surface missions: destination is set by ground command
+ *    (future: NAV_SET_DEST cmd).  For now defaults to ID 0.
+ *  - Orbital missions: destination is AEGIS STATION (ID 1).
+ */
+static void NAV_UpdateTrajectory(double dt)
+{
+    uint8_t phase = NAV.LastPhase.CurrentPhase;
+
+    /* Detect mission start: transition into POWERED_ASC */
+    if (NAV.Phase_fresh) {
+        NAV.Phase_fresh = false;
+
+        /* Assign destination on first ascent if not set */
+        if (phase == LA_PHASE_POWERED_ASC && !NAV.TrajActive) {
+            if (NAV.DestId == 0xFF) {
+                /* Orbital → Aegis Station; surface → default home */
+                NAV.DestId = (NAV.LastPhase.MissionType == 1) ? 1 : 0;
+            }
+
+            const LA_Destination_t *origin = LA_Dest_Lookup(NAV.OriginId);
+            const LA_Destination_t *dest   = LA_Dest_Lookup(NAV.DestId);
+            if (origin && dest) {
+                if (dest->type == LA_DEST_TYPE_ORBITAL) {
+                    NAV.InitDist_m  = dest->alt_m;
+                } else {
+                    NAV.InitDist_m  = LA_Dest_SurfaceDistance_m(
+                        origin->lat_deg, origin->lon_deg,
+                        dest->lat_deg,   dest->lon_deg);
+                }
+                NAV.DistToDest_m = NAV.InitDist_m;
+                NAV.TrajActive   = true;
+
+                CFE_EVS_SendEvent(10, CFE_EVS_EventType_INFORMATION,
+                    "NAV: Trajectory %s -> %s, range %.0f m",
+                    origin->name, dest->name, NAV.InitDist_m);
+            }
+        }
+
+        /* On landing: update origin to where we arrived */
+        if (phase == LA_PHASE_LANDED && NAV.DestId != 0xFF) {
+            NAV.OriginId = NAV.DestId;
+            CFE_EVS_SendEvent(11, CFE_EVS_EventType_INFORMATION,
+                "NAV: Arrived at dest %u — origin updated", NAV.OriginId);
+        }
+        if (phase == LA_PHASE_DOCKED) {
+            NAV.OriginId = 1; /* Aegis Station */
+        }
+
+        /* Reset trajectory on terminal phases */
+        if (phase == LA_PHASE_LANDED  ||
+            phase == LA_PHASE_DOCKED  ||
+            phase == LA_PHASE_SAFED   ||
+            phase == LA_PHASE_PREFLIGHT) {
+            NAV.TrajActive   = false;
+            NAV.DistToDest_m = 0.0;
+            NAV.DestId       = 0xFF;
+        }
+    }
+
+    /* Decrement range during active flight */
+    if (NAV.TrajActive) {
+        double speed = sqrt(NAV.state[3] * NAV.state[3] +
+                            NAV.state[4] * NAV.state[4] +
+                            NAV.state[5] * NAV.state[5]);
+        NAV.DistToDest_m -= speed * dt;
+        if (NAV.DistToDest_m < 0.0) {
+            NAV.DistToDest_m = 0.0;
+        }
+    }
+}
+
 /* ── Health Assessment ───────────────────────────────────── */
 
 static void NAV_AssessHealth(void)
@@ -362,8 +486,66 @@ static void NAV_SendStatePkt(void)
     NAV.StatePkt.PosUncert_m    = sqrt(NAV.P[0][0] + NAV.P[1][1] + NAV.P[2][2]);
     NAV.StatePkt.VelUncert_mps  = sqrt(NAV.P[3][3] + NAV.P[4][4] + NAV.P[5][5]);
     NAV.StatePkt.AttUncert_rad  = sqrt(NAV.P[6][6] + NAV.P[7][7] + NAV.P[8][8]);
+    NAV.StatePkt.DistToDest_m   = NAV.DistToDest_m;
     NAV.StatePkt.NavMode        = NAV.NavMode;
     NAV.StatePkt.NavHealth      = NAV.NavHealth;
+    NAV.StatePkt.DestId         = NAV.DestId;
 
     CFE_SB_TransmitMsg(&NAV.StatePkt.TlmHdr.Msg, true);
+}
+
+/* ── Command Processing ─────────────────────────────────── */
+
+static void NAV_ProcessCommand(const CFE_MSG_Message_t *MsgPtr)
+{
+    CFE_MSG_FcnCode_t fc;
+    CFE_MSG_GetFcnCode(MsgPtr, &fc);
+
+    switch (fc) {
+    case NAV_NOOP_CC:
+        NAV.CmdCount++;
+        break;
+
+    case NAV_RESET_CC:
+        NAV.CmdCount = 0;
+        NAV.ErrCount = 0;
+        break;
+
+    case NAV_SET_DEST_CC: {
+        /* Payload: 1 byte destination ID */
+        const uint8_t *payload = (const uint8_t *)MsgPtr + sizeof(CFE_MSG_CommandHeader_t);
+        uint8_t dest_id = payload[0];
+        const LA_Destination_t *dest = LA_Dest_Lookup(dest_id);
+        if (dest) {
+            NAV.DestId = dest_id;
+
+            /* Pre-compute distance from current origin for display */
+            const LA_Destination_t *origin = LA_Dest_Lookup(NAV.OriginId);
+            if (origin && !NAV.TrajActive) {
+                if (dest->type == LA_DEST_TYPE_ORBITAL) {
+                    NAV.DistToDest_m = dest->alt_m;
+                } else {
+                    NAV.DistToDest_m = LA_Dest_SurfaceDistance_m(
+                        origin->lat_deg, origin->lon_deg,
+                        dest->lat_deg,   dest->lon_deg);
+                }
+            }
+
+            NAV.CmdCount++;
+            CFE_EVS_SendEvent(12, CFE_EVS_EventType_INFORMATION,
+                "NAV: SET_DEST %u (%s) — %.0f m from %s",
+                dest_id, dest->name, NAV.DistToDest_m,
+                origin ? origin->name : "?");
+        } else {
+            NAV.ErrCount++;
+            CFE_EVS_SendEvent(13, CFE_EVS_EventType_ERROR,
+                "NAV: SET_DEST rejected — unknown ID %u", dest_id);
+        }
+        break;
+    }
+
+    default:
+        NAV.ErrCount++;
+        break;
+    }
 }

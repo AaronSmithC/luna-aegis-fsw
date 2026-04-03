@@ -235,8 +235,9 @@ copy_apps() {
     mkdir -p "${dst}/fsw/mission_inc"
     mkdir -p "${dst}/fsw/platform_inc"
 
-    # Copy source files
+    # Copy source files and local headers
     cp "${src}/src/"*.c "${dst}/fsw/src/" 2>/dev/null || true
+    cp "${src}/src/"*.h "${dst}/fsw/src/" 2>/dev/null || true
 
     # Copy tables if they exist
     if [[ -d "${src}/tables" ]]; then
@@ -252,6 +253,11 @@ copy_apps() {
   cp "${LA_FSW_DIR}/msg_defs/la_msgids.h"      "${CFS_DIR}/apps/la_common/fsw/mission_inc/"
   cp "${LA_FSW_DIR}/msg_defs/la_msg_structs.h"  "${CFS_DIR}/apps/la_common/fsw/mission_inc/"
   cp "${LA_FSW_DIR}/cfe_hdr/cfe_sb_types.h"     "${CFS_DIR}/apps/la_common/fsw/mission_inc/la_cfe_sb_types.h"
+
+  # Copy common headers (destinations, sequence gates)
+  if [[ -d "${LA_FSW_DIR}/common" ]]; then
+    cp "${LA_FSW_DIR}/common/"*.h "${CFS_DIR}/apps/la_common/fsw/mission_inc/" 2>/dev/null || true
+  fi
 
   # Copy HAL
   mkdir -p "${CFS_DIR}/apps/la_hal/fsw/src"
@@ -286,6 +292,7 @@ CMEOF
   cat > "${CFS_DIR}/apps/la_hal/CMakeLists.txt" << 'CMEOF'
 project(LA_HAL C)
 add_cfe_app(la_hal fsw/src/la_hal_sim.c)
+target_link_libraries(la_hal m)
 target_include_directories(la_hal PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/fsw/mission_inc
   ${CMAKE_CURRENT_SOURCE_DIR}/../la_common/fsw/mission_inc
@@ -473,6 +480,7 @@ SEOF
 set(OSAL_CONFIG_MAX_MODULES 48)
 set(OSAL_CONFIG_MAX_TASKS   64)
 set(OSAL_CONFIG_MAX_QUEUES  64)
+set(OSAL_CONFIG_QUEUE_MAX_DEPTH 256)
 set(OSAL_CONFIG_MAX_MUTEXES 32)
 OSCEOF
         log "  Patched $(basename "$cfg_file")"
@@ -484,6 +492,7 @@ OSCEOF
 set(OSAL_CONFIG_MAX_MODULES 48)
 set(OSAL_CONFIG_MAX_TASKS   64)
 set(OSAL_CONFIG_MAX_QUEUES  64)
+set(OSAL_CONFIG_QUEUE_MAX_DEPTH 256)
 set(OSAL_CONFIG_MAX_MUTEXES 32)
 OSCEOF
       log "  Created $(basename "$cfg_file")"
@@ -522,7 +531,7 @@ adapt_sources() {
     local app_dir="${CFS_DIR}/apps/la_${app}/fsw/src"
     [[ ! -d "$app_dir" ]] && continue
 
-    for src in "${app_dir}"/*.c; do
+    for src in "${app_dir}"/*.c "${app_dir}"/*.h; do
       [[ ! -f "$src" ]] && continue
 
       # Fix cFE header includes — remove relative paths
@@ -535,6 +544,9 @@ adapt_sources() {
 
       # Fix HAL includes
       sed -i 's|#include "../../hal/inc/la_hal.h"|#include "la_hal.h"|g' "$src"
+
+      # Fix common shared headers (destinations, sequence gates)
+      sed -i 's|#include "../../common/\(.*\)"|#include "\1"|g' "$src"
 
     done
   done
@@ -559,7 +571,17 @@ adapt_sources() {
   if [[ -f "$patch_script" ]]; then
     python3 "$patch_script" "${CFS_DIR}"
   else
-    warn "  patch_tables.py not found — tables not patched"
+    warn "  patch_tables.py not found — inline TO_LAB patch"
+  fi
+
+  # Remove high-rate MIDs from TO_LAB that the console doesn't parse
+  # (IMU 40Hz, ACS 40Hz, ALT 10Hz, GDN 10Hz, TRN 2Hz, TCS, LC)
+  local to_sub="${CFS_DIR}/apps/to_lab/fsw/tables/to_lab_sub.c"
+  if [[ -f "$to_sub" ]]; then
+    for mid_hex in 0x1811 0x1813 0x1817 0x1819 0x181B 0x1833 0x1843; do
+      sed -i "/${mid_hex}/d" "$to_sub"
+    done
+    echo "  TO_LAB high-rate MIDs removed (IMU/ACS/ALT/GDN/TRN/TCS/LC)"
   fi
 
   # Bump SCH_LAB max schedule entries from 32 to 48

@@ -114,16 +114,14 @@ select option{background:var(--bg);color:var(--wh);padding:8px}
     <div class="dest-box">
       <h3>▸ DESTINATION</h3>
       <select id="destSel">
-        <option value="shackleton" data-range="0" data-lat="-89.9" data-lon="0.0">Shackleton Crater Rim</option>
-        <option value="malapert" data-range="120" data-lat="-86.0" data-lon="0.0">Malapert Massif (120 km)</option>
-        <option value="ridge-a" data-range="85" data-lat="-88.5" data-lon="22.0">Connecting Ridge Alpha (85 km)</option>
-        <option value="degerlache" data-range="150" data-lat="-88.5" data-lon="-70.0">de Gerlache Crater (150 km)</option>
-        <option value="leibnitz" data-range="310" data-lat="-85.5" data-lon="36.0">Leibnitz Beta Plateau (310 km)</option>
-        <option value="sverdrup" data-range="200" data-lat="-88.3" data-lon="-145.0">Sverdrup Rim Station (200 km)</option>
-        <option value="amundsen" data-range="280" data-lat="-84.5" data-lon="-85.0">Amundsen North (280 km)</option>
-        <option value="nobile" data-range="170" data-lat="-85.3" data-lon="53.0">Nobile Rim Station (170 km)</option>
-        <option value="cabeus" data-range="100" data-lat="-84.9" data-lon="-35.0">Cabeus Site (100 km)</option>
-        <option value="aegis-station" data-range="0" data-lat="0" data-lon="0">Aegis Station (LLO rendezvous)</option>
+        <option value="0" data-type="surface" data-dv="0" data-lat="-89.90" data-lon="0.0" data-refuel="1" data-node="1">Shackleton Base</option>
+        <option value="1" data-type="orbital" data-dv="1680" data-lat="-89.90" data-lon="0.0" data-refuel="1" data-node="8">Aegis Station (LLO)</option>
+        <option value="2" data-type="surface" data-dv="320" data-lat="-88.10" data-lon="44.9" data-refuel="1" data-node="2">Shoemaker ISRU</option>
+        <option value="3" data-type="surface" data-dv="480" data-lat="-86.00" data-lon="0.0" data-refuel="0" data-node="3">Malapert Relay</option>
+        <option value="4" data-type="surface" data-dv="720" data-lat="-84.50" data-lon="-84.3" data-refuel="1" data-node="4">Amundsen Science</option>
+        <option value="5" data-type="surface" data-dv="580" data-lat="-85.30" data-lon="-35.7" data-refuel="1" data-node="5">Cabeus Ice Depot</option>
+        <option value="6" data-type="surface" data-dv="380" data-lat="-87.50" data-lon="22.0" data-refuel="0" data-node="6">Ridge Waypoint</option>
+        <option value="7" data-type="surface" data-dv="420" data-lat="-88.50" data-lon="-87.1" data-refuel="1" data-node="7">De Gerlache Hab</option>
       </select>
       <div class="dest-info" id="dI">Range: <span>surface hop</span></div>
     </div>
@@ -137,6 +135,10 @@ select option{background:var(--bg);color:var(--wh);padding:8px}
       <button class="sbtn" onclick="C('DOCK_MATE')">DOCK</button>
       <button class="sbtn" onclick="C('DOCK_DEMATE')">UNDOCK</button>
     </div>
+    <div class="btn-row">
+      <button class="sbtn" id="arBtn" onclick="toggleAutoRefuel()">AUTO-REFUEL: ON</button>
+      <button class="sbtn w" onclick="C('LUNET_REFUEL_START')">REFUEL NOW</button>
+    </div>
 
     <!-- PROPULSION PANEL (left side) -->
     <div class="p">
@@ -149,6 +151,7 @@ select option{background:var(--bg);color:var(--wh);padding:8px}
         <div class="dr"><span class="dl">LH₂</span><span class="dv vc" id="fM">---</span></div>
         <div class="bar"><div class="bf fc" id="fB" style="width:0"></div></div>
         <div class="dr"><span class="dl">Δv Remaining</span><span class="dv va" id="dR">---</span></div>
+        <div class="dr" id="rfR" style="display:none"><span class="dl">Refuel</span><span class="dv vm" id="rfS">---</span></div>
       </div>
     </div>
   </div>
@@ -159,6 +162,7 @@ select option{background:var(--bg);color:var(--wh);padding:8px}
     <div class="p" id="pNV"><div class="ph"><span class="pt">▸ NAVIGATION</span><span class="pb bo" id="nB">---</span></div><div class="pd">
       <div class="dr"><span class="dl">Position</span><span class="dv vc" id="pos">---</span></div>
       <div class="dr"><span class="dl">Velocity</span><span class="dv vg" id="vel">---</span></div>
+      <div class="dr"><span class="dl">Dist to Dest</span><span class="dv vm" id="dTD">---</span></div>
       <div class="dr"><span class="dl">Nav Mode</span><span class="dv va" id="nM">---</span></div>
       <div class="dr"><span class="dl">Health</span><span class="dv vg" id="nH">---</span></div>
     </div></div>
@@ -169,6 +173,7 @@ select option{background:var(--bg);color:var(--wh);padding:8px}
       <div class="bar"><div class="bf fg" id="sB" style="width:0"></div></div>
       <div class="dr"><span class="dl">Temp</span><span class="dv vw" id="bT">---</span></div>
       <div class="dr"><span class="dl">Load Shed</span><span class="dv vg" id="lS">---</span></div>
+      <div class="dr" id="rcR" style="display:none"><span class="dl">Recharge</span><span class="dv vm" id="rcS">---</span></div>
     </div></div>
 
     <div class="p" id="pLS"><div class="ph"><span class="pt">▸ LIFE SUPPORT</span><span class="pb bo" id="lB">---</span></div><div class="pd">
@@ -209,7 +214,19 @@ select option{background:var(--bg);color:var(--wh);padding:8px}
 
 <script>
 const WS_URL=`ws://${location.hostname||'localhost'}:8765`;
-let ws,conn=false,tc=0,cc=0,lt=0,curPhase=0;
+let ws,conn=false,tc=0,cc=0,lt=0,curPhase=0,lastDvAvail=0;
+// Destination table (matches la_destinations.h)
+const DESTS=[
+  {id:0,name:'SHACKLETON BASE',type:'surface',lat:-89.90,lon:0.0,alt:0,dv:0,refuel:1,node:1},
+  {id:1,name:'AEGIS STATION',type:'orbital',lat:-89.90,lon:0.0,alt:100000,dv:1680,refuel:1,node:8},
+  {id:2,name:'SHOEMAKER ISRU',type:'surface',lat:-88.10,lon:44.9,alt:0,dv:320,refuel:1,node:2},
+  {id:3,name:'MALAPERT RELAY',type:'surface',lat:-86.00,lon:0.0,alt:5000,dv:480,refuel:0,node:3},
+  {id:4,name:'AMUNDSEN SCIENCE',type:'surface',lat:-84.50,lon:-84.3,alt:0,dv:720,refuel:1,node:4},
+  {id:5,name:'CABEUS ICE DEPOT',type:'surface',lat:-85.30,lon:-35.7,alt:0,dv:580,refuel:1,node:5},
+  {id:6,name:'RIDGE WAYPOINT',type:'surface',lat:-87.50,lon:22.0,alt:2000,dv:380,refuel:0,node:6},
+  {id:7,name:'DE GERLACHE HAB',type:'surface',lat:-88.50,lon:-87.1,alt:0,dv:420,refuel:1,node:7},
+];
+let curLocId=0; // Where we are now (starts at Shackleton)
 const ev=[];const st={};
 const $=id=>document.getElementById(id);
 const F=(v,d)=>v!=null?v.toFixed(d??1):'---';
@@ -221,43 +238,102 @@ setInterval(()=>{const n=Date.now();for(const[i,t]of Object.entries(st))if(n-t>5
 function L(s,m,c){c=c||'ei';const t=new Date().toLocaleTimeString('en-US',{hour12:false});ev.unshift({t,s,m,c});if(ev.length>200)ev.pop();$('eL').innerHTML=ev.slice(0,40).map(e=>`<div class="ee ${e.c}"><span class="et">${e.t}</span><span class="es">${e.s}</span><span class="em">${e.m}</span></div>`).join('');$('eC').textContent=ev.length}
 
 function C(cmd,p){if(!ws||ws.readyState!==1){L('CMD',`Cannot send ${cmd} — not connected`,'er');return}ws.send(JSON.stringify({cmd,params:p||{}}));cc++;L('CMD',`→ ${cmd}`,'ec');$('pC').textContent=`TLM: ${tc} | CMD: ${cc}`}
+let autoRefuelOn=true;
+function toggleAutoRefuel(){C('LUNET_AUTO_REFUEL');autoRefuelOn=!autoRefuelOn;$('arBtn').textContent='AUTO-REFUEL: '+(autoRefuelOn?'ON':'OFF');$('arBtn').className='sbtn '+(autoRefuelOn?'':'d')}
+
+// Haversine distance (Moon radius 1737.4 km)
+function haversine(lat1,lon1,lat2,lon2){
+  const R=1737400,d2r=Math.PI/180;
+  const dLat=(lat2-lat1)*d2r,dLon=(lon2-lon1)*d2r;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*d2r)*Math.cos(lat2*d2r)*Math.sin(dLon/2)**2;
+  return R*2*Math.asin(Math.sqrt(a));
+}
+
+function getCurLoc(){return DESTS.find(d=>d.id===curLocId)||DESTS[0]}
+function getSelDest(){const opt=$('destSel').options[$('destSel').selectedIndex];return DESTS.find(d=>d.id===parseInt(opt.value))||DESTS[0]}
+
+// Max Δv at full tanks: Isp=440s, dry=5250kg, prop=2750kg
+const MAX_DV=Math.round(440*9.80665*Math.log((5250+2750)/5250)); // ~1819 m/s
+
+// Estimate Δv from distance. Use table value when from Shackleton,
+// otherwise scale by distance ratio from the table reference.
+function estDv(cur,tgt){
+  if(tgt.type==='orbital') return tgt.dv;
+  if(cur.id===0) return tgt.dv; // Table values are from Shackleton
+  // For other origins: scale Δv by actual/reference distance ratio
+  const ref_dist=haversine(DESTS[0].lat,DESTS[0].lon,tgt.lat,tgt.lon);
+  const act_dist=haversine(cur.lat,cur.lon,tgt.lat,tgt.lon);
+  if(ref_dist<1) return 200; // Same spot
+  return Math.round(tgt.dv * act_dist / ref_dist);
+}
+
+function updateDestInfo(){
+  const cur=getCurLoc(),tgt=getSelDest();
+  const isDock=tgt.type==='orbital';
+  const samePlace=cur.id===tgt.id;
+
+  const dvAvail=lastDvAvail>0?Math.round(lastDvAvail):MAX_DV;
+  if(isDock){
+    const dvNeed=estDv(cur,tgt);
+    const dvOk=dvAvail>=dvNeed;
+    const fuel=dvOk?'':'<span style="color:var(--rd)"> · INSUFFICIENT</span>';
+    $('dI').innerHTML=`From: <span>${cur.name}</span> · <span>ORBITAL</span> · Δv: <span>~${dvNeed}</span> / <span>${dvAvail}</span> avail${fuel}`;
+    V('dTD','100.0 km (alt)');$('dTD').className='dv vd';
+    $('goBtn').textContent='▶ DOCK';
+    $('goBtn').disabled=false;
+  } else if(samePlace){
+    $('dI').innerHTML=`At: <span>${cur.name}</span> · Δv: <span>${dvAvail}</span> m/s avail — select destination`;
+    V('dTD','0 km');$('dTD').className='dv vd';
+    $('goBtn').textContent='▶ LAUNCH';
+    $('goBtn').disabled=true;
+  } else {
+    const dist_m=haversine(cur.lat,cur.lon,tgt.lat,tgt.lon);
+    const dist_km=Math.round(dist_m/1000);
+    const dvNeed=estDv(cur,tgt);
+    // Round trip Δv: one-way if dest has refuel, otherwise 2x
+    const dvRound=tgt.refuel?dvNeed:dvNeed*2;
+    const dvOk=dvAvail>=dvRound;
+    const fuel=dvOk?'':'<span style="color:var(--rd)"> · INSUFFICIENT</span>';
+    const rf=tgt.refuel?' · <span style="color:var(--gn)">REFUEL</span>':'';
+    const tripLabel=tgt.refuel?'one-way':'RT ~'+dvRound;
+    $('dI').innerHTML=`From: <span>${cur.name}</span> · <span>${dist_km} km</span> · Δv: <span>~${dvNeed}</span> (${tripLabel}) / <span>${dvAvail}</span> avail${rf}${fuel}`;
+    V('dTD',dist_km+' km');$('dTD').className='dv vd';
+    $('goBtn').textContent='▶ LAUNCH';
+    $('goBtn').disabled=false;
+  }
+}
 
 // Destination selector
 $('destSel').addEventListener('change', function(){
-  const opt = this.options[this.selectedIndex];
-  const range = opt.dataset.range;
-  const isDock = this.value === 'aegis-station';
-  if (isDock) {
-    $('dI').innerHTML = 'Profile: <span>ORBITAL DOCKING</span> · Aegis Station LLO rendezvous';
-    $('goBtn').textContent = '▶ DOCK';
-  } else {
-    $('dI').innerHTML = `Profile: <span>SURFACE LANDING</span> · Range: <span>${range} km</span> · Δv: <span>~${Math.round(range*0.6+200)} m/s</span>`;
-    $('goBtn').textContent = '▶ LAUNCH';
-  }
+  updateDestInfo();
+  // Send SET_DEST to NAV so trajectory model knows target
+  const tgt=getSelDest();
+  C('NAV_SET_DEST',{destId:tgt.id});
 });
 $('destSel').dispatchEvent(new Event('change'));
 
 // Launch / Abort toggle
 function doLaunch(){
-  const sel = $('destSel');
-  const dest = sel.options[sel.selectedIndex].text;
-  const val = sel.value;
-  const isDock = val === 'aegis-station';
-  if (isDock) {
+  const tgt=getSelDest();
+  const isDock=tgt.type==='orbital';
+  if(isDock){
     C('SET_DOCK');
-    L('MISSION', `Docking mission to ${dest}`, 'ec');
+    L('MISSION',`Docking mission to ${tgt.name} from ${getCurLoc().name}`,'ec');
   } else {
     C('SET_SURFACE');
-    L('MISSION', `Surface landing to ${dest}`, 'ec');
+    L('MISSION',`Surface hop to ${tgt.name} from ${getCurLoc().name} (${Math.round(haversine(getCurLoc().lat,getCurLoc().lon,tgt.lat,tgt.lon)/1000)} km)`,'ec');
   }
-  setTimeout(() => C('START_MISSION'), 200);
+  setTimeout(()=>C('START_MISSION'),200);
 }
 
 function updateButtons(phase){
-  const flying = phase >= 1 && phase <= 5;
-  $('goBtn').style.display = flying ? 'none' : 'block';
-  $('abBtn').style.display = flying ? 'block' : 'none';
-  $('goBtn').disabled = (phase > 0 && phase < 6 && phase != 8);
+  const inFlight=phase>=1&&phase<=5||phase===9||phase===10||phase===12;
+  $('goBtn').style.display=inFlight?'none':'block';
+  $('abBtn').style.display=inFlight?'block':'none';
+  // Disable launch during flight; re-enable in idle phases
+  const idle=phase===0||phase===6||phase===8||phase===11;
+  if(!idle) $('goBtn').disabled=true;
+  else updateDestInfo(); // re-evaluate (handles same-place disable)
 }
 
 const PC={0:'var(--dm)',1:'var(--gn)',2:'var(--cy)',3:'var(--am)',4:'var(--mg)',5:'var(--rd)',6:'var(--gn)',7:'var(--rd)',8:'var(--dm)'};
@@ -276,12 +352,34 @@ case'mm_phase':
   if(m.abortReason) ptxt+=` · ${AN[m.abortReason]}`;
   $('pTm').textContent=ptxt;
   V('dR',F(m.dvRemaining,0),'m/s');
+  lastDvAvail=m.dvRemaining||0;
+  // On LANDED: update current location to selected destination
+  if(m.phase===6&&curPhase!==6){
+    const tgt=getSelDest();
+    curLocId=tgt.id;
+    L('NAV',`Arrived at ${tgt.name} — location updated`,'ec');
+    updateDestInfo();
+  }
+  // On DOCKED: at Aegis Station
+  if(m.phase===11&&curPhase!==11){
+    curLocId=1;
+    L('NAV','Docked at AEGIS STATION — location updated','ec');
+    updateDestInfo();
+  }
   curPhase=m.phase;
   updateButtons(m.phase);
+  // Refresh fuel info in dest panel
+  if(m.phase===0||m.phase===6||m.phase===8||m.phase===11) updateDestInfo();
   break;
 case'nav_state':fresh('pNV');
   V('pos',`${F(m.posX,0)} / ${F(m.posY,0)} / ${F(m.posZ,0)}`,'m');
   V('vel',`${F(m.velX,1)} / ${F(m.velY,1)} / ${F(m.velZ,1)}`,'m/s');
+  if(m.distToDest!=null&&m.distToDest>0){
+    const dtd=m.distToDest;
+    V('dTD',dtd>1000?F(dtd/1000,1)+' km':F(dtd,0)+' m');
+    // Magenta during flight, dim in preflight (from SET_DEST)
+    $('dTD').className='dv '+(curPhase>=1&&curPhase<=12&&curPhase!==6&&curPhase!==8?'vm':'vc');
+  }
   V('nM',m.navModeName||'---');
   const nh=m.navHealth;V('nH',nh===0?'OK':nh===1?'DEGRADED':'LOST');
   $('nH').className='dv '+(nh===0?'vg':nh===1?'va':'vr');
@@ -333,6 +431,16 @@ case'lg_status':fresh('pLG');
   break;
 case'dock_status':fresh('pLG');
   V('dK',m.collarStateName||'---');V('sP',F(m.deltaP,2),'kPa');break;
+case'lunet_beacon':{
+  let rs=m.refuelState,rn=m.refuelStateName||'';
+  let rfActive=rs>=1&&rs<=4,rfDone=rs===5;
+  $('rfR').style.display=(rfActive||rfDone)?'flex':'none';
+  $('rcR').style.display=(rs===4||rfDone)?'flex':'none';
+  if(rfActive){V('rfS',rs===3?'TRANSFERRING':rn);$('rfS').className='dv vm'}
+  else if(rfDone){V('rfS','COMPLETE');$('rfS').className='dv vg'}
+  if(rs===4){V('rcS','CHARGING');$('rcS').className='dv vm'}
+  else if(rfDone){V('rcS','FULL');$('rcS').className='dv vg'}
+  break;}
 case'bridge_status':L('BRIDGE',`Connected to cFS at ${m.cfsHost}:${m.ciPort}`,'ei');break;
 case'cmdAck':L('ACK',`${m.cmd} (${m.bytes}B)`,'ec');break;
 case'error':L('ERR',m.message,'er');break;

@@ -40,6 +40,7 @@
 #define PROP_DISARM_CC       3
 #define PROP_START_CC        4
 #define PROP_SHUTDOWN_CC     5
+#define PROP_REFUEL_CC       6
 
 typedef enum {
     PROP_SEQ_IDLE     = 0,
@@ -67,6 +68,7 @@ typedef struct {
     /* Prop tracking */
     double           OxMass_kg;
     double           FuelMass_kg;
+    bool             Refueling;      /* ISRU propellant transfer active */
 
     /* Output */
     LA_PROP_StatusPkt_t StatusPkt;
@@ -194,6 +196,28 @@ static void PROP_UpdateSequence(void)
         }
         break;
     }
+
+    /* ISRU refueling: add propellant each cycle while active */
+    if (PROP.Refueling && PROP.Sequence == PROP_SEQ_IDLE) {
+        double refuel_rate = 50.0;  /* kg/s total */
+        double ox_rate  = refuel_rate * PROP_MR_NOMINAL / (1.0 + PROP_MR_NOMINAL);
+        double fuel_rate = refuel_rate / (1.0 + PROP_MR_NOMINAL);
+
+        PROP.OxMass_kg   += ox_rate * PROP_DT;
+        PROP.FuelMass_kg += fuel_rate * PROP_DT;
+
+        /* Cap at full tank capacity */
+        if (PROP.OxMass_kg > 2062.5)  PROP.OxMass_kg = 2062.5;
+        if (PROP.FuelMass_kg > 687.5) PROP.FuelMass_kg = 687.5;
+
+        double total = PROP.OxMass_kg + PROP.FuelMass_kg;
+        if (total >= 2750.0) {
+            PROP.Refueling = false;
+            CFE_EVS_SendEvent(30, CFE_EVS_EventType_INFORMATION,
+                "PROP: ISRU refuel complete — %.0f kg LOX, %.0f kg LH2",
+                PROP.OxMass_kg, PROP.FuelMass_kg);
+        }
+    }
 }
 
 static void PROP_ProcessCommand(const CFE_MSG_Message_t *MsgPtr)
@@ -235,6 +259,7 @@ static void PROP_ProcessCommand(const CFE_MSG_Message_t *MsgPtr)
         if (PROP.Sequence == PROP_SEQ_ARMED) {
             PROP.Sequence   = PROP_SEQ_CHILL;
             PROP.SeqTimer_s = 0.0;
+            PROP.Refueling  = false;  /* Safety: stop refuel on engine start */
             PROP.CmdCount++;
             CFE_EVS_SendEvent(21, CFE_EVS_EventType_INFORMATION,
                               "PROP: Engine start sequence initiated — CHILL");
@@ -262,6 +287,20 @@ static void PROP_ProcessCommand(const CFE_MSG_Message_t *MsgPtr)
             PROP.CmdCount++;
         } else {
             PROP.ErrCount++;
+        }
+        break;
+
+    case PROP_REFUEL_CC:
+        if (PROP.Sequence == PROP_SEQ_IDLE) {
+            PROP.Refueling = true;
+            PROP.CmdCount++;
+            CFE_EVS_SendEvent(29, CFE_EVS_EventType_INFORMATION,
+                "PROP: ISRU refuel initiated — current %.0f kg",
+                PROP.OxMass_kg + PROP.FuelMass_kg);
+        } else {
+            PROP.ErrCount++;
+            CFE_EVS_SendEvent(31, CFE_EVS_EventType_ERROR,
+                "PROP: REFUEL rejected — engine not idle");
         }
         break;
 

@@ -81,9 +81,11 @@ typedef struct {
     double      PosUncert_m;      /* 1-sigma position uncertainty     */
     double      VelUncert_mps;    /* 1-sigma velocity uncertainty     */
     double      AttUncert_rad;    /* 1-sigma attitude uncertainty     */
+    double      DistToDest_m;     /* Great-circle distance to dest    */
     uint8_t     NavMode;          /* 0=propagate, 1=IMU+alt, 2=full  */
     uint8_t     NavHealth;        /* 0=OK, 1=degraded, 2=lost        */
-    uint16_t    Padding;
+    uint8_t     DestId;           /* Active destination ID (0xFF=none)*/
+    uint8_t     Padding;
 } LA_NAV_StatePkt_t;
 
 /**
@@ -147,6 +149,10 @@ typedef enum {
     LA_PHASE_LANDED      = 6,
     LA_PHASE_ABORT       = 7,
     LA_PHASE_SAFED       = 8,
+    LA_PHASE_RENDEZVOUS  = 9,    /* Orbital: close approach under RCS        */
+    LA_PHASE_DOCKING     = 10,   /* Orbital: collar extending, awaiting dock */
+    LA_PHASE_DOCKED      = 11,   /* Orbital: hard dock confirmed             */
+    LA_PHASE_UNDOCKING   = 12,   /* Orbital: demate sequence, awaiting retract */
     LA_PHASE_COUNT
 } LA_FlightPhase_t;
 
@@ -158,8 +164,10 @@ typedef struct {
     CFE_MSG_TelemetryHeader_t  TlmHdr;
     uint8_t     CurrentPhase;     /* LA_FlightPhase_t                 */
     uint8_t     PreviousPhase;
-    uint8_t     AbortReason;      /* 0=none, 1=prop, 2=nav, 3=cmd    */
+    uint8_t     AbortReason;      /* 0=none, 1=prop, 2=nav, 3=cmd, 4=dock */
     uint8_t     MissionMode;      /* 0=auto, 1=manual, 2=abort-seq   */
+    uint8_t     MissionType;      /* 0=surface, 1=orbital docking    */
+    uint8_t     Padding;
     double      MET_s;            /* Mission elapsed time (s)         */
     double      DvRemaining_mps;  /* Estimated remaining Δv           */
     double      PropRemaining_kg; /* Propellant remaining (kg)        */
