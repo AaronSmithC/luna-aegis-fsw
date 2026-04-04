@@ -69,6 +69,16 @@ if [[ -f "$CONSOLE_FILE" ]]; then
     fi
 fi
 
+# Kill any stale processes on our ports from a previous run
+for port in "$WS_PORT" "$HTTP_PORT"; do
+  pids=$(lsof -ti:"$port" 2>/dev/null || true)
+  if [[ -n "$pids" ]]; then
+    echo "  Killing stale process on port $port (PID $pids)"
+    kill $pids 2>/dev/null || true
+  fi
+done
+sleep 0.5
+
 # Start WebSocket bridge in background
 cd "$SCRIPT_DIR"
 python3 la_bridge.py --ws-port "$WS_PORT" &

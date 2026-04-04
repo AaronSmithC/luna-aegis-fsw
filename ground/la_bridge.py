@@ -371,8 +371,16 @@ class LABridge:
         self.nav_decimator = 0   # Downsample NAV from 40 Hz to 2 Hz
         self.prop_decimator = 0  # Downsample PROP from 10 Hz to 2 Hz
 
-        # Async queue decouples UDP recv from WebSocket broadcast
-        self.tlm_queue = asyncio.Queue(maxsize=512)
+        # Latest-value table: keyed by telemetry type string.
+        # tlm_recv updates the value; tlm_broadcast sweeps dirty entries.
+        # Guarantees every MID type gets delivered — no FIFO priority inversion.
+        self._latest = {}      # type_str -> JSON string
+        self._dirty = set()    # set of type_str updated since last broadcast
+        self._lock = asyncio.Lock()
+
+        # Diagnostic: track last-seen time for LG/DOCK to detect gaps
+        self._diag_lg_last = 0.0
+        self._diag_dock_last = 0.0
 
         # UDP sockets
         self.cmd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -487,7 +495,7 @@ class LABridge:
             print(f"  ✗ Error: {e}")
 
     async def tlm_recv(self):
-        """Read UDP as fast as possible, parse, and enqueue for broadcast."""
+        """Read UDP as fast as possible, parse, and store latest value per type."""
         loop = asyncio.get_event_loop()
         while self.running:
             try:
@@ -520,22 +528,34 @@ class LABridge:
                     if parsed:
                         parsed["timestamp"] = time.time()
                         msg = json.dumps(parsed)
+                        tlm_type = parsed["type"]
                     else:
                         continue
                 else:
                     if mid not in self.unknown_mids:
                         self.unknown_mids.add(mid)
                         print(f"  · MID 0x{mid:04X} (no parser, len={len(data)})")
-                    msg = json.dumps({"type": "raw", "mid": f"0x{mid:04X}",
-                                      "length": len(data), "timestamp": time.time()})
+                    continue  # Drop unparsed MIDs entirely — they have no console handler
 
-                # Non-blocking enqueue; drop oldest if full
-                if self.tlm_queue.full():
-                    try:
-                        self.tlm_queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        pass
-                self.tlm_queue.put_nowait(msg)
+                # Diagnostic: log LG/DOCK arrivals with gap detection
+                now = time.time()
+                if mid == LA_LG_STATUS_TLM_MID:
+                    gap = now - self._diag_lg_last if self._diag_lg_last else 0
+                    self._diag_lg_last = now
+                    state = parsed.get("gearStateName", "?")
+                    flag = " *** GAP" if gap > 2.0 else ""
+                    print(f"  ◄ LG  seq={seq_count:5d} state={state:10s} gap={gap:.1f}s{flag}")
+                elif mid == LA_DOCK_STATUS_TLM_MID:
+                    gap = now - self._diag_dock_last if self._diag_dock_last else 0
+                    self._diag_dock_last = now
+                    state = parsed.get("collarStateName", "?")
+                    flag = " *** GAP" if gap > 2.0 else ""
+                    print(f"  ◄ DOCK seq={seq_count:5d} state={state:10s} gap={gap:.1f}s{flag}")
+
+                # Store latest value — overwrites previous, never drops other types
+                async with self._lock:
+                    self._latest[tlm_type] = msg
+                    self._dirty.add(tlm_type)
 
             except BlockingIOError:
                 await asyncio.sleep(0.01)
@@ -545,28 +565,32 @@ class LABridge:
                     await asyncio.sleep(0.1)
 
     async def tlm_broadcast(self):
-        """Drain the queue and push to WebSocket clients."""
+        """Sweep latest-value table at 10 Hz, push all dirty entries to clients."""
         while self.running:
             try:
-                msg = await asyncio.wait_for(self.tlm_queue.get(), timeout=1.0)
-                await self.broadcast(msg)
-            except asyncio.TimeoutError:
-                continue
+                await asyncio.sleep(0.1)  # 10 Hz sweep rate
+                if not self.clients or not self._dirty:
+                    continue
+
+                # Snapshot and clear dirty set under lock
+                async with self._lock:
+                    to_send = [self._latest[t] for t in self._dirty]
+                    self._dirty.clear()
+
+                # Send all dirty entries to all clients concurrently
+                dead = set()
+                for ws in list(self.clients):
+                    try:
+                        for msg in to_send:
+                            await ws.send(msg)
+                    except websockets.exceptions.ConnectionClosed:
+                        dead.add(ws)
+                self.clients -= dead
+
             except Exception as e:
                 if self.running:
                     print(f"  ✗ TLM broadcast error: {e}")
                     await asyncio.sleep(0.1)
-
-    async def broadcast(self, message):
-        if not self.clients:
-            return
-        dead = set()
-        for ws in self.clients:
-            try:
-                await ws.send(message)
-            except websockets.exceptions.ConnectionClosed:
-                dead.add(ws)
-        self.clients -= dead
 
 
 # ──────────────────────────────────────────────────────────

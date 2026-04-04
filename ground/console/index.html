@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LUNA-AEGIS · SHORT HOPPER · MISSION CONTROL</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Chakra+Petch:wght@300;400;500;600;700&display=swap');
-:root{--bg:#060f1c;--bg2:#0a1628;--bg3:#0c1e30;--cy:#00cfff;--cy2:#007a99;--cy3:#003344;--cyg:#00cfff40;--am:#ffb300;--gn:#00e676;--gn2:#005f30;--rd:#ff5252;--rd2:#661515;--mg:#e040fb;--wh:#ccdde8;--dm:#5a7080;--gr:#0d2a4080;--fm:'IBM Plex Mono',monospace;--fd:'Chakra Petch',sans-serif}
+:root{--bg:#060f1c;--bg2:#0a1628;--bg3:#0c1e30;--cy:#00cfff;--cy2:#007a99;--cy3:#003344;--cyg:#00cfff40;--am:#ffb300;--gn:#00e676;--gn2:#005f30;--rd:#ff5252;--rd2:#661515;--mg:#e040fb;--wh:#ccdde8;--dm:#5a7080;--gr:#0d2a4080;--fm:'Courier New',Courier,monospace;--fd:'Arial Narrow',Arial,Helvetica,sans-serif}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--wh);font-family:var(--fm);min-height:100vh}
 body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(var(--gr) 1px,transparent 1px),linear-gradient(90deg,var(--gr) 1px,transparent 1px);background-size:20px 20px;pointer-events:none;z-index:0}
@@ -87,6 +86,7 @@ select option{background:var(--bg);color:var(--wh);padding:8px}
 
 /* FULL WIDTH */
 .full{grid-column:1/-1}
+.dv{transition:opacity .5s ease}
 .stale .dv{opacity:.3}
 .bb{position:fixed;bottom:0;left:0;right:0;height:24px;background:var(--bg);border-top:1px solid var(--cy2);display:flex;align-items:center;justify-content:space-between;padding:0 24px;z-index:100;font-size:10px;color:var(--dm)}
 </style>

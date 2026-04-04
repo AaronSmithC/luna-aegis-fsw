@@ -582,6 +582,26 @@ adapt_sources() {
       sed -i "/${mid_hex}/d" "$to_sub"
     done
     echo "  TO_LAB high-rate MIDs removed (IMU/ACS/ALT/GDN/TRN/TCS/LC)"
+
+    # Increase MsgLim to prevent SB pipe overflow.
+    # Default MsgLim 4 overflows in 400ms for 10 Hz MIDs (NAV/PROP)
+    # and generates EVS cascade events that starve 1 Hz MIDs (LG/DOCK).
+    # 10 Hz MIDs: 4 → 16  (tolerates 1.6s TO_LAB scheduling jitter)
+    #  1 Hz MIDs: 4 → 8   (tolerates 8s startup drain delay)
+    # cFE core:   4 → 8   (same)
+    # Total worst-case: 5×8+32+2×16+8×8 = 168 < 256 pipe depth
+    sed -i 's/\(0x1815.*{0, 0},\) 4/\1 16/' "$to_sub"   # NAV  10 Hz
+    sed -i 's/\(0x1823.*{0, 0},\) 4/\1 16/' "$to_sub"   # PROP 10 Hz
+    for mid_1hz in 0x1821 0x1831 0x1835 0x1841 0x1837 0x1825 0x1827 0x1839; do
+      sed -i "s/\(${mid_1hz}.*{0, 0},\) 4/\1 8/" "$to_sub"
+    done
+    # cFE core HK MIDs
+    sed -i 's/\(CFE_ES_HK_TLM_MID.*{0, 0},\) 4/\1 8/' "$to_sub"
+    sed -i 's/\(CFE_EVS_HK_TLM_MID.*{0, 0},\) 4/\1 8/' "$to_sub"
+    sed -i 's/\(CFE_SB_HK_TLM_MID.*{0, 0},\) 4/\1 8/' "$to_sub"
+    sed -i 's/\(CFE_TBL_HK_TLM_MID.*{0, 0},\) 4/\1 8/' "$to_sub"
+    sed -i 's/\(CFE_TIME_HK_TLM_MID.*{0, 0},\) 4/\1 8/' "$to_sub"
+    echo "  TO_LAB MsgLim increased (10Hz→16, 1Hz→8, cFE→8)"
   fi
 
   # Bump SCH_LAB max schedule entries from 32 to 48
