@@ -58,7 +58,7 @@ typedef struct {
  * Reference point: Shackleton Crater rim (primary base).
  */
 
-#define LA_DEST_COUNT  8
+#define LA_DEST_COUNT  9
 
 static const LA_Destination_t LA_DEST_TABLE[LA_DEST_COUNT] = {
 
@@ -132,6 +132,15 @@ static const LA_Destination_t LA_DEST_TABLE[LA_DEST_COUNT] = {
         .lat_deg = -88.50, .lon_deg = -87.1, .alt_m = 0.0,
         .approx_dv_mps = 420.0,
         .name = "DE GERLACHE HAB"
+    },
+
+    /* ── ID 8: SPA Basin Edge — Long-Range Outpost ── */
+    {
+        .id = 8, .type = LA_DEST_TYPE_SURFACE,
+        .lunet_node_id = 9, .has_refuel = 1,
+        .lat_deg = -65.00, .lon_deg = 170.0, .alt_m = 0.0,
+        .approx_dv_mps = 900.0,
+        .name = "AITKEN BASIN CAMP"
     },
 };
 
