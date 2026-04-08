@@ -1,3 +1,5 @@
+> **⚠️ v1 — Archived.** This repository contains the original open-source release of the Short Hopper cFS stack. Active development has moved to a private v2 repository.
+
 # Luna-Aegis Short Hopper — Flight Software
 
 **Reusable Lunar Surface–Orbit Transfer Vehicle — cFS-Based Flight Software**
